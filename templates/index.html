@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LeadGen Pro Scraper</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div class="background-elements">
+        <div class="blob blob-1"></div>
+        <div class="blob blob-2"></div>
+    </div>
+
+    <div class="container">
+        <header>
+            <h1>LeadGen<span class="highlight">Pro</span></h1>
+            <p>Automated Google Maps Deep Scraper designed by Siddhant Sinha owned <br>by: Manish Patel</p>
+        </header>
+
+        <div class="card glassmorphism">
+            <div class="input-group">
+                <label for="keyword">Business Niche</label>
+                <input type="text" id="keyword" placeholder="e.g. Restaurants, Plumbers, Dentists">
+            </div>
+
+            <div class="input-group">
+                <label for="city">Target City</label>
+                <input type="text" id="city" placeholder="e.g. Patna, New York, Mumbai">
+            </div>
+
+            <button id="scrape-btn" class="glow-button">Start Scraping 200 Leads</button>
+
+            <div id="status-container" class="hidden">
+                <div class="spinner"></div>
+                <h3 id="status-title">Scraping in progress...</h3>
+                <p id="status-text">Chrome is opening in the background.<br>This may take a few minutes to grab 200
+                    leads.</p>
+            </div>
+
+            <div id="result-container" class="hidden"></div>
+        </div>
+    </div>
+
+    <script>
+        document.getElementById('scrape-btn').addEventListener('click', async () => {
+            const keyword = document.getElementById('keyword').value.trim();
+            const city = document.getElementById('city').value.trim();
+
+            if (!keyword || !city) {
+                alert("Please enter both a niche and a city.");
+                return;
+            }
+
+            // Show Loading UI
+            document.getElementById('scrape-btn').classList.add('hidden');
+            document.getElementById('result-container').classList.add('hidden');
+            document.getElementById('status-container').classList.remove('hidden');
+
+            try {
+                // Start the job
+                const response = await fetch('/api/scrape', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ keyword, city })
+                });
+                const data = await response.json();
+
+                if (data.error) throw new Error(data.error);
+
+                // Poll for status
+                const jobId = data.job_id;
+                const pollInterval = setInterval(async () => {
+                    const statusRes = await fetch(`/api/status/${jobId}`);
+                    const statusData = await statusRes.json();
+
+                    if (statusData.status === 'completed') {
+                        clearInterval(pollInterval);
+                        showResult(true, statusData.message);
+                    } else if (statusData.status === 'error') {
+                        clearInterval(pollInterval);
+                        showResult(false, statusData.message);
+                    }
+                }, 3000);
+
+            } catch (err) {
+                showResult(false, "Could not connect to the local server.");
+            }
+        });
+
+        function showResult(isSuccess, message) {
+            document.getElementById('status-container').classList.add('hidden');
+            document.getElementById('scrape-btn').classList.remove('hidden');
+            const resultBox = document.getElementById('result-container');
+            resultBox.classList.remove('hidden');
+
+            if (isSuccess) {
+                resultBox.innerHTML = `
+                    <div class="success-box">
+                        <h3>🎉 Success!</h3>
+                        <p>${message}</p>
+                    </div>
+                `;
+            } else {
+                resultBox.innerHTML = `
+                    <div class="error-box">
+                        <h3>⚠️ Error</h3>
+                        <p>${message}</p>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+
+</html>
