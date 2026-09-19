@@ -4,116 +4,521 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LeadGen Pro Scraper</title>
+    <title>LeadGen Pro Scraper - Google & Bing Maps</title>
     <link rel="stylesheet" href="/static/style.css">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;800&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- React, ReactDOM, Babel & Framer Motion for extraordinary dynamic animations -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://unpkg.com/framer-motion@11.11.17/dist/framer-motion.js"></script>
 </head>
 
 <body>
+    <!-- Dynamic Interactive Neural Particle Mesh Canvas -->
+    <canvas id="bg-canvas"></canvas>
+
+    <!-- Cyber Grid Overlay -->
+    <div class="cyber-grid"></div>
+
+    <!-- Framer Motion Animated Glowing Orbs -->
     <div class="background-elements">
         <div class="blob blob-1"></div>
         <div class="blob blob-2"></div>
+        <div class="blob blob-3"></div>
     </div>
 
-    <div class="container">
-        <header>
-            <h1>LeadGen<span class="highlight">Pro</span></h1>
-            <p>Automated Google Maps Deep Scraper designed by Siddhant Sinha owned <br>by: Manish Patel</p>
-        </header>
-
-        <div class="card glassmorphism">
-            <div class="input-group">
-                <label for="keyword">Business Niche</label>
-                <input type="text" id="keyword" placeholder="e.g. Restaurants, Plumbers, Dentists">
-            </div>
-
-            <div class="input-group">
-                <label for="city">Target City</label>
-                <input type="text" id="city" placeholder="e.g. Patna, New York, Mumbai">
-            </div>
-
-            <button id="scrape-btn" class="glow-button">Start Scraping 200 Leads</button>
-
-            <div id="status-container" class="hidden">
-                <div class="spinner"></div>
-                <h3 id="status-title">Scraping in progress...</h3>
-                <p id="status-text">Chrome is opening in the background.<br>This may take a few minutes to grab 200
-                    leads.</p>
-            </div>
-
-            <div id="result-container" class="hidden"></div>
+    <!-- React + Framer Motion Application Root -->
+    <div id="root">
+        <!-- Fallback Static UI in case scripts are loading -->
+        <div class="container">
+            <header>
+                <h1>LeadGen<span class="highlight">Pro</span></h1>
+                <p>Loading interactive experience...</p>
+            </header>
         </div>
     </div>
 
+    <!-- Interactive Neural Mesh Background Canvas Engine -->
     <script>
-        document.getElementById('scrape-btn').addEventListener('click', async () => {
-            const keyword = document.getElementById('keyword').value.trim();
-            const city = document.getElementById('city').value.trim();
+        const canvas = document.getElementById('bg-canvas');
+        const ctx = canvas.getContext('2d');
+        let width, height;
+        let particles = [];
+        let mouse = { x: null, y: null, radius: 150 };
 
-            if (!keyword || !city) {
-                alert("Please enter both a niche and a city.");
-                return;
-            }
+        // Color palettes for canvas based on Mode & Platform
+        const colorThemes = {
+            'general-google': { r: 59, g: 130, b: 246 },     // Blue
+            'general-bing': { r: 6, g: 182, b: 212 },        // Cyan/Teal
+            'coaching-google': { r: 168, g: 85, b: 247 },    // Royal Purple
+            'coaching-bing': { r: 56, g: 189, b: 248 }       // Electric Sky
+        };
 
-            // Show Loading UI
-            document.getElementById('scrape-btn').classList.add('hidden');
-            document.getElementById('result-container').classList.add('hidden');
-            document.getElementById('status-container').classList.remove('hidden');
+        let currentCanvasColor = { ...colorThemes['general-google'] };
+        let targetCanvasColor = { ...colorThemes['general-google'] };
 
-            try {
-                // Start the job
-                const response = await fetch('/api/scrape', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ keyword, city })
-                });
-                const data = await response.json();
-
-                if (data.error) throw new Error(data.error);
-
-                // Poll for status
-                const jobId = data.job_id;
-                const pollInterval = setInterval(async () => {
-                    const statusRes = await fetch(`/api/status/${jobId}`);
-                    const statusData = await statusRes.json();
-
-                    if (statusData.status === 'completed') {
-                        clearInterval(pollInterval);
-                        showResult(true, statusData.message);
-                    } else if (statusData.status === 'error') {
-                        clearInterval(pollInterval);
-                        showResult(false, statusData.message);
-                    }
-                }, 3000);
-
-            } catch (err) {
-                showResult(false, "Could not connect to the local server.");
-            }
-        });
-
-        function showResult(isSuccess, message) {
-            document.getElementById('status-container').classList.add('hidden');
-            document.getElementById('scrape-btn').classList.remove('hidden');
-            const resultBox = document.getElementById('result-container');
-            resultBox.classList.remove('hidden');
-
-            if (isSuccess) {
-                resultBox.innerHTML = `
-                    <div class="success-box">
-                        <h3>🎉 Success!</h3>
-                        <p>${message}</p>
-                    </div>
-                `;
-            } else {
-                resultBox.innerHTML = `
-                    <div class="error-box">
-                        <h3>⚠️ Error</h3>
-                        <p>${message}</p>
-                    </div>
-                `;
+        function updateCanvasTheme(mode, platform) {
+            const key = `${mode}-${platform}`;
+            if (colorThemes[key]) {
+                targetCanvasColor = { ...colorThemes[key] };
             }
         }
+
+        function resizeCanvas() {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+            initParticles();
+        }
+
+        class Particle {
+            constructor() {
+                this.x = Math.random() * width;
+                this.y = Math.random() * height;
+                this.size = Math.random() * 2.2 + 0.8;
+                this.vx = (Math.random() - 0.5) * 0.7;
+                this.vy = (Math.random() - 0.5) * 0.7;
+                this.alpha = Math.random() * 0.6 + 0.3;
+            }
+
+            draw() {
+                ctx.beginPath();
+                ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
+                ctx.fillStyle = `rgba(${Math.round(currentCanvasColor.r)}, ${Math.round(currentCanvasColor.g)}, ${Math.round(currentCanvasColor.b)}, ${this.alpha})`;
+                ctx.shadowBlur = 12;
+                ctx.shadowColor = `rgba(${Math.round(currentCanvasColor.r)}, ${Math.round(currentCanvasColor.g)}, ${Math.round(currentCanvasColor.b)}, 0.8)`;
+                ctx.fill();
+                ctx.shadowBlur = 0;
+            }
+
+            update() {
+                this.x += this.vx;
+                this.y += this.vy;
+
+                if (this.x < 0 || this.x > width) this.vx *= -1;
+                if (this.y < 0 || this.y > height) this.vy *= -1;
+
+                // Mouse interaction
+                if (mouse.x !== null && mouse.y !== null) {
+                    const dx = mouse.x - this.x;
+                    const dy = mouse.y - this.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < mouse.radius) {
+                        const force = (mouse.radius - dist) / mouse.radius;
+                        this.x -= (dx / dist) * force * 3;
+                        this.y -= (dy / dist) * force * 3;
+                    }
+                }
+            }
+        }
+
+        function initParticles() {
+            particles = [];
+            const count = Math.min(80, Math.floor((width * height) / 16000));
+            for (let i = 0; i < count; i++) {
+                particles.push(new Particle());
+            }
+        }
+
+        function animateCanvas() {
+            ctx.clearRect(0, 0, width, height);
+
+            // Interpolate canvas color smoothly
+            currentCanvasColor.r += (targetCanvasColor.r - currentCanvasColor.r) * 0.05;
+            currentCanvasColor.g += (targetCanvasColor.g - currentCanvasColor.g) * 0.05;
+            currentCanvasColor.b += (targetCanvasColor.b - currentCanvasColor.b) * 0.05;
+
+            // Connect nearby particles
+            for (let i = 0; i < particles.length; i++) {
+                for (let j = i + 1; j < particles.length; j++) {
+                    const dx = particles[i].x - particles[j].x;
+                    const dy = particles[i].y - particles[j].y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+
+                    if (dist < 130) {
+                        const opacity = (1 - dist / 130) * 0.25;
+                        ctx.beginPath();
+                        ctx.moveTo(particles[i].x, particles[i].y);
+                        ctx.lineTo(particles[j].x, particles[j].y);
+                        ctx.strokeStyle = `rgba(${Math.round(currentCanvasColor.r)}, ${Math.round(currentCanvasColor.g)}, ${Math.round(currentCanvasColor.b)}, ${opacity})`;
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                    }
+                }
+            }
+
+            // Update & draw particles
+            for (let p of particles) {
+                p.update();
+                p.draw();
+            }
+
+            requestAnimationFrame(animateCanvas);
+        }
+
+        window.addEventListener('resize', resizeCanvas);
+        window.addEventListener('mousemove', (e) => {
+            mouse.x = e.clientX;
+            mouse.y = e.clientY;
+        });
+        window.addEventListener('mouseleave', () => {
+            mouse.x = null;
+            mouse.y = null;
+        });
+
+        resizeCanvas();
+        animateCanvas();
     </script>
+
+    <!-- React + Framer Motion Component -->
+    {% raw %}
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+        const { motion, AnimatePresence } = window.Motion || window['framer-motion'] || {
+            motion: {
+                div: ({ children, className, id, style, onClick }) => <div className={className} id={id} style={style} onClick={onClick}>{children}</div>,
+                button: ({ children, className, id, type, onClick, disabled }) => <button className={className} id={id} type={type} onClick={onClick} disabled={disabled}>{children}</button>,
+                span: ({ children, className }) => <span className={className}>{children}</span>
+            },
+            AnimatePresence: ({ children }) => children
+        };
+
+        const coachingPresetsList = [
+            "IIT JEE & NEET Coaching",
+            "UPSC & Civil Services Coaching",
+            "SSC & Banking Coaching",
+            "Class 9-12 Science & Maths Tuition",
+            "Spoken English & IELTS Academy",
+            "Commerce & CA Foundation",
+            "Coding & Web Dev Institute",
+            "Music & Performing Arts Academy"
+        ];
+
+        function LeadScraperApp() {
+            const [mode, setMode] = useState("general"); // 'general' | 'coaching'
+            const [platform, setPlatform] = useState("google"); // 'google' | 'bing'
+            const [keyword, setKeyword] = useState("");
+            const [city, setCity] = useState("");
+            const [status, setStatus] = useState("idle"); // 'idle' | 'running' | 'completed' | 'error'
+            const [statusMessage, setStatusMessage] = useState("");
+            const [activeChip, setActiveChip] = useState(null);
+
+            // Sync body class and canvas color with active mode and platform
+            useEffect(() => {
+                const body = document.body;
+                body.className = '';
+                if (platform === 'bing') body.classList.add('theme-bing');
+                if (mode === 'coaching') body.classList.add('mode-coaching');
+                updateCanvasTheme(mode, platform);
+            }, [mode, platform]);
+
+            const isBing = platform === 'bing';
+            const limit = isBing ? 100 : 200;
+            const platformName = isBing ? "Bing Maps" : "Google Maps";
+
+            const handleModeChange = (newMode) => {
+                setMode(newMode);
+                setActiveChip(null);
+                setKeyword("");
+            };
+
+            const handleChipClick = (niche) => {
+                setActiveChip(niche);
+                setKeyword(niche);
+            };
+
+            const startScraping = async () => {
+                if (!keyword.trim() || !city.trim()) {
+                    alert(`Please enter both a ${mode === 'coaching' ? 'coaching category' : 'niche'} and a target city.`);
+                    return;
+                }
+
+                setStatus("running");
+                setStatusMessage(`Chrome is launching in the background. Searching and extracting up to ${limit} leads with verified phone numbers from ${platformName}...`);
+
+                try {
+                    const response = await fetch('/api/scrape', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            keyword: keyword.trim(),
+                            city: city.trim(),
+                            source: platform,
+                            target_count: limit
+                        })
+                    });
+
+                    const data = await response.json();
+                    if (data.error) throw new Error(data.error);
+
+                    const jobId = data.job_id;
+                    const pollInterval = setInterval(async () => {
+                        try {
+                            const statusRes = await fetch(`/api/status/${jobId}`);
+                            const statusData = await statusRes.json();
+
+                            if (statusData.status === 'completed') {
+                                clearInterval(pollInterval);
+                                setStatus("completed");
+                                setStatusMessage(statusData.message);
+                            } else if (statusData.status === 'error') {
+                                clearInterval(pollInterval);
+                                setStatus("error");
+                                setStatusMessage(statusData.message);
+                            }
+                        } catch (err) {
+                            clearInterval(pollInterval);
+                            setStatus("error");
+                            setStatusMessage("Connection interrupted while checking scrape progress.");
+                        }
+                    }, 3000);
+
+                } catch (err) {
+                    setStatus("error");
+                    setStatusMessage(err.message || "Could not connect to the local server.");
+                }
+            };
+
+            return (
+                <motion.div 
+                    className="container"
+                    initial={{ opacity: 0, y: 25 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+                >
+                    {/* Top Mode Selector Tabs */}
+                    <div className="mode-tabs">
+                        <div 
+                            className="mode-tab-indicator" 
+                            style={{ 
+                                width: 'calc(50% - 6px)',
+                                left: mode === 'general' ? '5px' : 'calc(50% + 1px)'
+                            }}
+                        />
+                        <button 
+                            type="button" 
+                            className={`mode-tab ${mode === 'general' ? 'active' : ''}`}
+                            onClick={() => handleModeChange('general')}
+                        >
+                            <span>🏢</span> General Businesses
+                        </button>
+                        <button 
+                            type="button" 
+                            className={`mode-tab ${mode === 'coaching' ? 'active' : ''}`}
+                            onClick={() => handleModeChange('coaching')}
+                        >
+                            <span>🎓</span> Coaching & Institutes
+                        </button>
+                    </div>
+
+                    {/* Header */}
+                    <header>
+                        <motion.h1
+                            key={mode}
+                            initial={{ opacity: 0, y: -10 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.4 }}
+                        >
+                            LeadGen<span className="highlight">Pro</span>
+                        </motion.h1>
+                        <p>
+                            {mode === 'coaching' 
+                                ? "Specialized Coaching & Academy Lead Scraper (Phone Verified)"
+                                : "Automated Google & Bing Maps Deep Scraper (Phone Verified)"}
+                        </p>
+                        <div className="designer-tag">
+                            <span>⚡</span> Designed by <strong>Siddhant Sinha</strong>
+                        </div>
+                    </header>
+
+                    {/* Main Glassmorphism Card */}
+                    <motion.div 
+                        className="card glassmorphism"
+                        layout
+                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
+                    >
+                        {/* Coaching Special Badge */}
+                        <AnimatePresence>
+                            {mode === 'coaching' && (
+                                <motion.div 
+                                    className="coaching-badge"
+                                    initial={{ opacity: 0, scale: 0.9 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.9 }}
+                                    transition={{ duration: 0.3 }}
+                                >
+                                    <div className="pulse-dot"></div>
+                                    <span>Targeted Coaching, Academy & Tuition Hubs</span>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        {/* Platform Toggle Switch */}
+                        <div className="toggle-container">
+                            <label className="toggle-label">Target Platform & Limit</label>
+                            <div className="platform-switch">
+                                <div 
+                                    className="switch-indicator" 
+                                    style={{
+                                        width: 'calc(50% - 6px)',
+                                        left: platform === 'google' ? '4px' : 'calc(50% + 2px)'
+                                    }}
+                                />
+                                <button 
+                                    type="button" 
+                                    className={`switch-option ${platform === 'google' ? 'active' : ''}`}
+                                    onClick={() => setPlatform('google')}
+                                >
+                                    <span className="platform-icon">📍</span>
+                                    <span>Google Maps (200)</span>
+                                </button>
+                                <button 
+                                    type="button" 
+                                    className={`switch-option ${platform === 'bing' ? 'active' : ''}`}
+                                    onClick={() => setPlatform('bing')}
+                                >
+                                    <span className="platform-icon">🌐</span>
+                                    <span>Bing Maps (100)</span>
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Coaching Quick Preset Chips */}
+                        <AnimatePresence>
+                            {mode === 'coaching' && (
+                                <motion.div 
+                                    className="coaching-chips"
+                                    initial={{ opacity: 0, height: 0 }}
+                                    animate={{ opacity: 1, height: 'auto' }}
+                                    exit={{ opacity: 0, height: 0 }}
+                                    transition={{ duration: 0.35 }}
+                                >
+                                    <label className="chips-title">Popular Coaching Niches (Click to Auto-fill)</label>
+                                    <div className="chips-container">
+                                        {coachingPresetsList.map((preset, idx) => (
+                                            <motion.button
+                                                key={preset}
+                                                type="button"
+                                                className={`preset-chip ${activeChip === preset ? 'active' : ''}`}
+                                                onClick={() => handleChipClick(preset)}
+                                                whileHover={{ scale: 1.04, y: -2 }}
+                                                whileTap={{ scale: 0.97 }}
+                                                initial={{ opacity: 0, y: 10 }}
+                                                animate={{ opacity: 1, y: 0 }}
+                                                transition={{ delay: idx * 0.03 }}
+                                            >
+                                                {preset}
+                                            </motion.button>
+                                        ))}
+                                    </div>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        {/* Inputs */}
+                        <div className="input-group">
+                            <label htmlFor="keyword">
+                                {mode === 'coaching' ? 'Coaching / Course Category' : 'Business Niche'}
+                            </label>
+                            <input 
+                                type="text" 
+                                id="keyword"
+                                value={keyword}
+                                onChange={(e) => {
+                                    setKeyword(e.target.value);
+                                    setActiveChip(null);
+                                }}
+                                placeholder={mode === 'coaching' ? 'e.g. IIT JEE Coaching, NEET Academy, Maths Tuition' : 'e.g. Restaurants, Plumbers, Dentists, Gyms'}
+                            />
+                        </div>
+
+                        <div className="input-group">
+                            <label htmlFor="city">
+                                {mode === 'coaching' ? 'Target City / Education Hub' : 'Target City'}
+                            </label>
+                            <input 
+                                type="text" 
+                                id="city"
+                                value={city}
+                                onChange={(e) => setCity(e.target.value)}
+                                placeholder={mode === 'coaching' ? 'e.g. Kota, Patna, Delhi, Hyderabad, Bangalore' : 'e.g. Patna, New York, Mumbai, London'}
+                            />
+                        </div>
+
+                        {/* Action Button */}
+                        {status !== 'running' && (
+                            <motion.button 
+                                id="scrape-btn" 
+                                className="glow-button"
+                                onClick={startScraping}
+                                whileHover={{ scale: 1.02 }}
+                                whileTap={{ scale: 0.98 }}
+                            >
+                                Start Scraping {limit} {mode === 'coaching' ? 'Coaching' : platformName} Leads
+                            </motion.button>
+                        )}
+
+                        {/* Status Loading Container */}
+                        <AnimatePresence>
+                            {status === 'running' && (
+                                <motion.div 
+                                    id="status-container"
+                                    initial={{ opacity: 0, scale: 0.95 }}
+                                    animate={{ opacity: 1, scale: 1 }}
+                                    exit={{ opacity: 0, scale: 0.95 }}
+                                >
+                                    <div className="spinner-wrap">
+                                        <div className="spinner"></div>
+                                    </div>
+                                    <h3 id="status-title">Scraping in Progress...</h3>
+                                    <p id="status-text">{statusMessage}</p>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+
+                        {/* Result Output Container */}
+                        <AnimatePresence>
+                            {(status === 'completed' || status === 'error') && (
+                                <motion.div 
+                                    id="result-container"
+                                    initial={{ opacity: 0, y: 15 }}
+                                    animate={{ opacity: 1, y: 0 }}
+                                    exit={{ opacity: 0, y: 15 }}
+                                >
+                                    {status === 'completed' ? (
+                                        <div className="success-box">
+                                            <h3>🎉 Scraping Completed!</h3>
+                                            <p>{statusMessage}</p>
+                                        </div>
+                                    ) : (
+                                        <div className="error-box">
+                                            <h3>⚠️ Notice</h3>
+                                            <p>{statusMessage}</p>
+                                        </div>
+                                    )}
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </motion.div>
+
+                    {/* App Footer */}
+                    <footer className="app-footer">
+                        <span>LeadGen Pro • Designed by <strong className="designer-name">Siddhant Sinha</strong></span>
+                    </footer>
+                </motion.div>
+            );
+        }
+
+        // Mount React Application
+        const rootElement = document.getElementById('root');
+        if (ReactDOM.createRoot) {
+            ReactDOM.createRoot(rootElement).render(<LeadScraperApp />);
+        } else {
+            ReactDOM.render(<LeadScraperApp />, rootElement);
+        }
+    </script>
+    {% endraw %}
 </body>
 
 </html>
