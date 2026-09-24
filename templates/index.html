@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LeadGen Pro Scraper - Google & Bing Maps</title>
+    <title>LeadGen Pro Scraper - Google Maps Lead Generation & Intelligence</title>
     <link rel="stylesheet" href="/static/style.css">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;800&display=swap" rel="stylesheet">
     
@@ -48,19 +48,22 @@
         let particles = [];
         let mouse = { x: null, y: null, radius: 150 };
 
-        // Color palettes for canvas based on Mode & Platform
+        // Color palettes for canvas based on Mode
         const colorThemes = {
-            'general-google': { r: 59, g: 130, b: 246 },     // Blue
-            'general-bing': { r: 6, g: 182, b: 212 },        // Cyan/Teal
+            'general-google': { r: 59, g: 130, b: 246 },     // Deep Blue
             'coaching-google': { r: 168, g: 85, b: 247 },    // Royal Purple
-            'coaching-bing': { r: 56, g: 189, b: 248 }       // Electric Sky
+            'bihar_directory': { r: 16, g: 185, b: 129 },    // Emerald Green
+            'indiamart': { r: 0, g: 166, b: 153 }            // IndiaMART Teal
         };
 
         let currentCanvasColor = { ...colorThemes['general-google'] };
         let targetCanvasColor = { ...colorThemes['general-google'] };
 
-        function updateCanvasTheme(mode, platform) {
-            const key = `${mode}-${platform}`;
+        function updateCanvasTheme(mode) {
+            let key = 'general-google';
+            if (mode === 'coaching') key = 'coaching-google';
+            else if (mode === 'bihar_directory') key = 'bihar_directory';
+            else if (mode === 'indiamart') key = 'indiamart';
             if (colorThemes[key]) {
                 targetCanvasColor = { ...colorThemes[key] };
             }
@@ -76,20 +79,17 @@
             constructor() {
                 this.x = Math.random() * width;
                 this.y = Math.random() * height;
-                this.size = Math.random() * 2.2 + 0.8;
-                this.vx = (Math.random() - 0.5) * 0.7;
-                this.vy = (Math.random() - 0.5) * 0.7;
-                this.alpha = Math.random() * 0.6 + 0.3;
+                this.size = Math.random() * 2.0 + 0.8;
+                this.vx = (Math.random() - 0.5) * 0.6;
+                this.vy = (Math.random() - 0.5) * 0.6;
+                this.alpha = Math.random() * 0.5 + 0.3;
             }
 
-            draw() {
+            draw(cr, cg, cb) {
                 ctx.beginPath();
                 ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(${Math.round(currentCanvasColor.r)}, ${Math.round(currentCanvasColor.g)}, ${Math.round(currentCanvasColor.b)}, ${this.alpha})`;
-                ctx.shadowBlur = 12;
-                ctx.shadowColor = `rgba(${Math.round(currentCanvasColor.r)}, ${Math.round(currentCanvasColor.g)}, ${Math.round(currentCanvasColor.b)}, 0.8)`;
+                ctx.fillStyle = `rgba(${cr}, ${cg}, ${cb}, ${this.alpha})`;
                 ctx.fill();
-                ctx.shadowBlur = 0;
             }
 
             update() {
@@ -99,15 +99,17 @@
                 if (this.x < 0 || this.x > width) this.vx *= -1;
                 if (this.y < 0 || this.y > height) this.vy *= -1;
 
-                // Mouse interaction
+                // Mouse interaction with distance-squared check (fast, no sqrt)
                 if (mouse.x !== null && mouse.y !== null) {
                     const dx = mouse.x - this.x;
                     const dy = mouse.y - this.y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
-                    if (dist < mouse.radius) {
+                    const distSq = dx * dx + dy * dy;
+                    const rSq = mouse.radius * mouse.radius;
+                    if (distSq < rSq) {
+                        const dist = Math.sqrt(distSq) || 1;
                         const force = (mouse.radius - dist) / mouse.radius;
-                        this.x -= (dx / dist) * force * 3;
-                        this.y -= (dy / dist) * force * 3;
+                        this.x -= (dx / dist) * force * 2.5;
+                        this.y -= (dy / dist) * force * 2.5;
                     }
                 }
             }
@@ -115,7 +117,7 @@
 
         function initParticles() {
             particles = [];
-            const count = Math.min(80, Math.floor((width * height) / 16000));
+            const count = Math.min(36, Math.floor((width * height) / 30000));
             for (let i = 0; i < count; i++) {
                 particles.push(new Particle());
             }
@@ -129,29 +131,36 @@
             currentCanvasColor.g += (targetCanvasColor.g - currentCanvasColor.g) * 0.05;
             currentCanvasColor.b += (targetCanvasColor.b - currentCanvasColor.b) * 0.05;
 
-            // Connect nearby particles
+            const cr = Math.round(currentCanvasColor.r);
+            const cg = Math.round(currentCanvasColor.g);
+            const cb = Math.round(currentCanvasColor.b);
+
+            // Connect nearby particles with distance-squared (avoids thousands of Math.sqrt calls)
+            const maxDist = 120;
+            const maxDistSq = maxDist * maxDist;
             for (let i = 0; i < particles.length; i++) {
                 for (let j = i + 1; j < particles.length; j++) {
                     const dx = particles[i].x - particles[j].x;
                     const dy = particles[i].y - particles[j].y;
-                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    const distSq = dx * dx + dy * dy;
 
-                    if (dist < 130) {
-                        const opacity = (1 - dist / 130) * 0.25;
+                    if (distSq < maxDistSq) {
+                        const dist = Math.sqrt(distSq);
+                        const opacity = (1 - dist / maxDist) * 0.22;
                         ctx.beginPath();
                         ctx.moveTo(particles[i].x, particles[i].y);
                         ctx.lineTo(particles[j].x, particles[j].y);
-                        ctx.strokeStyle = `rgba(${Math.round(currentCanvasColor.r)}, ${Math.round(currentCanvasColor.g)}, ${Math.round(currentCanvasColor.b)}, ${opacity})`;
+                        ctx.strokeStyle = `rgba(${cr}, ${cg}, ${cb}, ${opacity})`;
                         ctx.lineWidth = 1;
                         ctx.stroke();
                     }
                 }
             }
 
-            // Update & draw particles
+            // Update & draw particles without software shadowBlur
             for (let p of particles) {
                 p.update();
-                p.draw();
+                p.draw(cr, cg, cb);
             }
 
             requestAnimationFrame(animateCanvas);
@@ -174,12 +183,13 @@
     <!-- React + Framer Motion Component -->
     {% raw %}
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
         const { motion, AnimatePresence } = window.Motion || window['framer-motion'] || {
             motion: {
-                div: ({ children, className, id, style, onClick }) => <div className={className} id={id} style={style} onClick={onClick}>{children}</div>,
+                div: ({ children, className, id, style, onClick, layout }) => <div className={className} id={id} style={style} onClick={onClick}>{children}</div>,
                 button: ({ children, className, id, type, onClick, disabled }) => <button className={className} id={id} type={type} onClick={onClick} disabled={disabled}>{children}</button>,
-                span: ({ children, className }) => <span className={className}>{children}</span>
+                span: ({ children, className }) => <span className={className}>{children}</span>,
+                h1: ({ children, className }) => <h1 className={className}>{children}</h1>
             },
             AnimatePresence: ({ children }) => children
         };
@@ -195,32 +205,1231 @@
             "Music & Performing Arts Academy"
         ];
 
+        // AI Settings Modal Component
+        function AISettingsModal({ isOpen, onClose, aiConfig, onConfigSaved, onToast }) {
+            if (!isOpen) return null;
+
+            const [provider, setProvider] = useState(aiConfig?.provider || 'groq');
+            const [model, setModel] = useState(aiConfig?.model || 'openai/gpt-oss-120b');
+            const [apiKey, setApiKey] = useState('');
+            const [showKey, setShowKey] = useState(false);
+            const [testing, setTesting] = useState(false);
+            const [saving, setSaving] = useState(false);
+            const [testResult, setTestResult] = useState(null);
+
+            const handleProviderChange = (p) => {
+                setProvider(p);
+                if (p === 'groq') setModel('openai/gpt-oss-120b');
+                else if (p === 'gemini') setModel('gemini-2.0-flash');
+                else if (p === 'openai') setModel('gpt-4o-mini');
+                setTestResult(null);
+            };
+
+            const handleKeyInput = (val) => {
+                setApiKey(val);
+                setTestResult(null);
+                const trimmed = val.trim();
+                if (trimmed.startsWith('gsk_')) {
+                    setProvider('groq');
+                    setModel('openai/gpt-oss-120b');
+                } else if (trimmed.startsWith('AIzaSy')) {
+                    setProvider('gemini');
+                    setModel('gemini-2.0-flash');
+                } else if (trimmed.startsWith('sk-')) {
+                    setProvider('openai');
+                    setModel('gpt-4o-mini');
+                }
+            };
+
+            const handleTestKey = async () => {
+                if (!apiKey && !aiConfig?.has_key) {
+                    setTestResult({ success: false, message: 'Please enter an API key to test.' });
+                    return;
+                }
+                setTesting(true);
+                setTestResult(null);
+                try {
+                    const res = await fetch('/api/ai/test_key', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            provider: provider,
+                            model: model,
+                            api_key: apiKey
+                        })
+                    });
+                    const data = await res.json();
+                    setTestResult(data);
+                } catch (err) {
+                    setTestResult({ success: false, message: 'Could not connect to local server: ' + err.message });
+                } finally {
+                    setTesting(false);
+                }
+            };
+
+            const handleSaveKey = async () => {
+                if (!apiKey && !aiConfig?.has_key) {
+                    alert('Please enter an API key.');
+                    return;
+                }
+                setSaving(true);
+                try {
+                    const res = await fetch('/api/ai/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            provider: provider,
+                            model: model,
+                            api_key: apiKey
+                        })
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        if (onConfigSaved) onConfigSaved(data.config);
+                        if (onToast) onToast(`🟢 AI Model Activated (${data.config.model})!`);
+                        onClose();
+                    } else {
+                        alert(data.message || 'Error saving configuration');
+                    }
+                } catch (err) {
+                    alert('Error saving configuration: ' + err.message);
+                } finally {
+                    setSaving(false);
+                }
+            };
+
+            const handleClearKey = async () => {
+                if (!confirm('Are you sure you want to disconnect this API key?')) return;
+                try {
+                    const res = await fetch('/api/ai/config', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ provider: 'groq', model: 'openai/gpt-oss-120b', api_key: '' })
+                    });
+                    const data = await res.json();
+                    if (onConfigSaved) onConfigSaved(data.config);
+                    if (onToast) onToast('AI Key disconnected.');
+                    onClose();
+                } catch (err) {
+                    console.error(err);
+                }
+            };
+
+            return (
+                <div className="ai-modal-backdrop" onClick={onClose}>
+                    <div className="ai-settings-modal" onClick={(e) => e.stopPropagation()}>
+                        <div className="modal-header">
+                            <div>
+                                <h3><span>✨</span> AI Model & Research Settings</h3>
+                                <p>Configure Groq LPU, Google Gemini, or OpenAI for deep market research</p>
+                            </div>
+                            <button type="button" className="modal-close-btn" onClick={onClose}>✕</button>
+                        </div>
+
+                        <div className="ai-form-group">
+                            <label>AI Provider</label>
+                            <div className="provider-toggle-group">
+                                <button
+                                    type="button"
+                                    className={`provider-toggle-btn ${provider === 'groq' ? 'active' : ''}`}
+                                    onClick={() => handleProviderChange('groq')}
+                                >
+                                    <span>⚡</span> Groq LPU
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`provider-toggle-btn ${provider === 'gemini' ? 'active' : ''}`}
+                                    onClick={() => handleProviderChange('gemini')}
+                                >
+                                    <span>🟢</span> Gemini
+                                </button>
+                                <button
+                                    type="button"
+                                    className={`provider-toggle-btn ${provider === 'openai' ? 'active' : ''}`}
+                                    onClick={() => handleProviderChange('openai')}
+                                >
+                                    <span>🔷</span> OpenAI
+                                </button>
+                            </div>
+                        </div>
+
+                        <div className="ai-form-group">
+                            <label>AI Model</label>
+                            <select
+                                className="research-select"
+                                value={model}
+                                onChange={(e) => setModel(e.target.value)}
+                                style={{ padding: '0.65rem 0.8rem', fontSize: '0.85rem' }}
+                            >
+                                {provider === 'groq' ? (
+                                    <>
+                                        <option value="openai/gpt-oss-120b">GPT-OSS 120B (Flagship Deep Analysis)</option>
+                                        <option value="qwen/qwen3.8-27b">Qwen 3.8 27B (Ultra-Fast 27B)</option>
+                                        <option value="openai/gpt-oss-20b">GPT-OSS 20B (Compact Fast)</option>
+                                    </>
+                                ) : provider === 'gemini' ? (
+                                    <>
+                                        <option value="gemini-2.0-flash">Gemini 2.0 Flash (Fastest, Next-Gen)</option>
+                                        <option value="gemini-1.5-flash">Gemini 1.5 Flash (Generous Free Tier)</option>
+                                        <option value="gemini-1.5-pro">Gemini 1.5 Pro (Deepest Analysis)</option>
+                                    </>
+                                ) : (
+                                    <>
+                                        <option value="gpt-4o-mini">GPT-4o Mini (Cost-Effective & Fast)</option>
+                                        <option value="gpt-4o">GPT-4o (Flagship Model)</option>
+                                    </>
+                                )}
+                            </select>
+                        </div>
+
+                        <div className="ai-form-group">
+                            <label>
+                                API Key {aiConfig?.has_key && <span style={{ color: '#10b981', fontWeight: 600 }}> (🔒 Active & Protected on Server)</span>}
+                            </label>
+                            <div className="ai-key-input-wrap">
+                                <input
+                                    type={showKey ? 'text' : 'password'}
+                                    className="ai-key-input"
+                                    value={apiKey}
+                                    onChange={(e) => handleKeyInput(e.target.value)}
+                                    placeholder={aiConfig?.has_key ? "Key is active on server (enter new key to update)" : "Paste gsk_..., AIzaSy..., or sk-... key"}
+                                    autoComplete="off"
+                                    spellCheck="false"
+                                />
+                                <button
+                                    type="button"
+                                    className="ai-eye-toggle"
+                                    onClick={() => setShowKey(!showKey)}
+                                    title={showKey ? "Hide key" : "Show key"}
+                                >
+                                    {showKey ? '👁️' : '👁️‍🗨️'}
+                                </button>
+                            </div>
+                            <div className="ai-input-helper">
+                                {provider === 'groq' ? (
+                                    <span>Get free key at <a href="https://console.groq.com/keys" target="_blank" rel="noreferrer">console.groq.com</a></span>
+                                ) : provider === 'gemini' ? (
+                                    <span>Get free key at <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">aistudio.google.com</a></span>
+                                ) : (
+                                    <span>Get key from <a href="https://platform.openai.com/api-keys" target="_blank" rel="noreferrer">platform.openai.com</a></span>
+                                )}
+                                <span>🔒 Protected in .env • Never exposed to client</span>
+                            </div>
+                        </div>
+
+                        {testResult && (
+                            <div className={`ai-test-feedback ${testResult.success ? 'success' : 'error'}`}>
+                                <span>{testResult.success ? '✅' : '⚠️'}</span>
+                                <span>{testResult.message}</span>
+                            </div>
+                        )}
+
+                        <div className="modal-actions-row">
+                            <button
+                                type="button"
+                                className="modal-btn-test"
+                                onClick={handleTestKey}
+                                disabled={testing || (!apiKey && !aiConfig?.has_key)}
+                            >
+                                {testing ? 'Testing Connection...' : '⚡ Test Connection'}
+                            </button>
+                            <button
+                                type="button"
+                                className="modal-btn-save"
+                                onClick={handleSaveKey}
+                                disabled={saving}
+                            >
+                                {saving ? 'Saving...' : '💾 Save & Activate'}
+                            </button>
+                        </div>
+
+                        {aiConfig?.has_key && (
+                            <div style={{ textAlign: 'center', marginTop: '0.85rem' }}>
+                                <button
+                                    type="button"
+                                    onClick={handleClearKey}
+                                    style={{ background: 'none', border: 'none', color: '#ef4444', fontSize: '0.75rem', cursor: 'pointer', textDecoration: 'underline' }}
+                                >
+                                    Disconnect Active Key
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // Comprehensive AI Intelligence & Market Recommender Component
+        function AIRecommender({ onApply, onToast, onOpenAiSettings, aiConfig }) {
+            const [activeTab, setActiveTab] = useState("daily"); // 'daily' | 'research' | 'directory'
+
+            // --- Daily AI State ---
+            const [dailyData, setDailyData] = useState(null);
+            const [dailyLoading, setDailyLoading] = useState(false);
+
+            const fetchDaily = async (force = false) => {
+                setDailyLoading(true);
+                try {
+                    const res = await fetch('/api/ai/daily', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ force: force })
+                    });
+                    const data = await res.json();
+                    setDailyData(data);
+                    if (force && onToast) {
+                        onToast('✨ Refreshed Daily AI Lead Opportunities!');
+                    }
+                } catch (err) {
+                    console.error("Error fetching daily AI recommendations:", err);
+                } finally {
+                    setDailyLoading(false);
+                }
+            };
+
+            useEffect(() => {
+                fetchDaily(false);
+            }, [aiConfig?.has_key]);
+
+            // --- Deep Research State ---
+            const [researchTopic, setResearchTopic] = useState("");
+            const [researchSector, setResearchSector] = useState("all");
+            const [researchRegion, setResearchRegion] = useState("all");
+            const [researchFocus, setResearchFocus] = useState("all");
+            const [researchLoading, setResearchLoading] = useState(false);
+            const [researchResult, setResearchResult] = useState(null);
+            const [researchError, setResearchError] = useState("");
+
+            const handleRunResearch = async (customTopic = null) => {
+                const topicToUse = (customTopic !== null ? customTopic : researchTopic).trim();
+                if (!topicToUse) {
+                    alert("Please enter a research topic or click a quick prompt chip.");
+                    return;
+                }
+                if (customTopic !== null) {
+                    setResearchTopic(customTopic);
+                }
+                setResearchLoading(true);
+                setResearchError("");
+                setResearchResult(null);
+
+                try {
+                    const res = await fetch('/api/ai/deep_research', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            topic: topicToUse,
+                            sector: researchSector,
+                            region: researchRegion,
+                            focus: researchFocus
+                        })
+                    });
+                    const data = await res.json();
+                    if (data.success && data.research) {
+                        setResearchResult(data.research);
+                        if (onToast) onToast(`🔬 Market research complete for "${topicToUse}"!`);
+                    } else {
+                        setResearchError(data.error || "Research could not be completed.");
+                    }
+                } catch (err) {
+                    setResearchError("Failed to connect to server: " + err.message);
+                } finally {
+                    setResearchLoading(false);
+                }
+            };
+
+            // --- Directory State (Category Directory & Google Live) ---
+            const [state, setState] = useState("all");
+            const [superCategory, setSuperCategory] = useState("all");
+            const [subCategory, setSubCategory] = useState("all");
+            const [searchQuery, setSearchQuery] = useState("");
+            const [categories, setCategories] = useState([]);
+            const [recommendations, setRecommendations] = useState([]);
+            const [googleSync, setGoogleSync] = useState({ synced: false, count: 0, last_sync: '' });
+            const [syncingGoogle, setSyncingGoogle] = useState(false);
+            const [dirLoading, setDirLoading] = useState(false);
+
+            // Client-side cache for instantaneous 0ms category switching & race-condition cancellation
+            const recsCacheRef = useRef({});
+            const abortControllerRef = useRef(null);
+            const reqIdRef = useRef(0);
+
+            const fetchRecs = async (st = state, sup = superCategory, sub = subCategory, q = searchQuery, force = false) => {
+                const cacheKey = `${st}_${sup}_${sub}_${q.trim().toLowerCase()}`;
+
+                // Instant cache hit: Switch category in 0ms without waiting or flashing
+                if (!force && recsCacheRef.current[cacheKey]) {
+                    setRecommendations(recsCacheRef.current[cacheKey]);
+                    setDirLoading(false);
+                    return;
+                }
+
+                // If not in cache or forced, abort previous pending fetch
+                if (abortControllerRef.current) {
+                    abortControllerRef.current.abort();
+                }
+                const controller = new AbortController();
+                abortControllerRef.current = controller;
+                const currentReqId = ++reqIdRef.current;
+
+                setDirLoading(true);
+                try {
+                    const res = await fetch('/api/ai/recommend', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        signal: controller.signal,
+                        body: JSON.stringify({
+                            state: st,
+                            category: sup,
+                            sub_category: sub,
+                            query: q,
+                            limit: 18
+                        })
+                    });
+                    const data = await res.json();
+                    if (currentReqId === reqIdRef.current) {
+                        const items = data.recommendations || [];
+                        recsCacheRef.current[cacheKey] = items;
+                        setRecommendations(items);
+                        if (data.google_sync) setGoogleSync(data.google_sync);
+                    }
+                } catch (err) {
+                    if (err.name !== 'AbortError') {
+                        console.error("Error fetching recommendations:", err);
+                    }
+                } finally {
+                    if (currentReqId === reqIdRef.current) {
+                        setDirLoading(false);
+                    }
+                }
+            };
+
+            useEffect(() => {
+                fetch('/api/ai/categories')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.categories) {
+                            setCategories(data.categories);
+                            // Pre-warm cache for 'all' in background so opening directory is 0ms
+                            fetchRecs("all", "all", "all", "", false);
+                        }
+                        if (data.google_sync) setGoogleSync(data.google_sync);
+                    })
+                    .catch(err => console.error("Error fetching categories:", err));
+            }, []);
+
+            useEffect(() => {
+                if (activeTab === 'directory') {
+                    fetchRecs(state, superCategory, subCategory, searchQuery);
+                }
+            }, [state, superCategory, subCategory, activeTab]);
+
+            const handleSuperCategoryClick = (catId) => {
+                setSuperCategory(catId);
+                setSubCategory("all");
+                // Check cache immediately for instant UI update!
+                const cacheKey = `${state}_${catId}_all_${searchQuery.trim().toLowerCase()}`;
+                if (recsCacheRef.current[cacheKey]) {
+                    setRecommendations(recsCacheRef.current[cacheKey]);
+                }
+            };
+
+            const handleSubCategoryClick = (subId) => {
+                setSubCategory(subId);
+                const cacheKey = `${state}_${superCategory}_${subId}_${searchQuery.trim().toLowerCase()}`;
+                if (recsCacheRef.current[cacheKey]) {
+                    setRecommendations(recsCacheRef.current[cacheKey]);
+                }
+            };
+
+            const handleSearchSubmit = (e) => {
+                e.preventDefault();
+                fetchRecs(state, superCategory, subCategory, searchQuery, true);
+            };
+
+            const handleSyncGoogle = async () => {
+                setSyncingGoogle(true);
+                try {
+                    const res = await fetch('/api/ai/sync_google', { method: 'POST' });
+                    const data = await res.json();
+                    if (data.google_sync) setGoogleSync(data.google_sync);
+                    recsCacheRef.current = {}; // clear cache on sync
+                    fetchRecs(state, superCategory, subCategory, searchQuery, true);
+                    if (onToast) onToast(`🟢 Google Live Synced: ${data.message || 'Updated!'}`);
+                } catch (err) {
+                    console.error("Error syncing Google keywords:", err);
+                } finally {
+                    setSyncingGoogle(false);
+                }
+            };
+
+            const activeCategoryObj = categories.find(c => c.id === superCategory) || categories[0];
+            const activeSubCategories = activeCategoryObj ? activeCategoryObj.sub_categories || [] : [];
+
+            const researchQuickChips = [
+                "Bihta Airport Corridor Commercial Plots",
+                "Ranchi Ring Road Gated Township Land",
+                "IIT JEE & NEET Coaching Hubs Patna",
+                "Industrial Shed Contractors Adityapur",
+                "Diagnostic Centers & Pathology Labs",
+                "Rooftop Solar EPC Installers Bihar"
+            ];
+
+            return (
+                <div className="ai-card">
+                    {/* Header */}
+                    <div className="ai-header-wrap">
+                        <div className="ai-title-box">
+                            <h2>
+                                <span className="ai-sparkle-icon">✨</span>
+                                AI Market Intelligence & Research
+                            </h2>
+                            <p>Daily AI Opportunities, Deep Micro-Market Research & Real Estate Plot Intelligence</p>
+                        </div>
+                        <div className="ai-controls-top">
+                            <button
+                                type="button"
+                                className="shuffle-btn"
+                                onClick={onOpenAiSettings}
+                                title="Configure AI Model & API Key"
+                                style={{ background: 'rgba(16, 185, 129, 0.14)', borderColor: 'rgba(16, 185, 129, 0.35)', color: '#6ee7b7' }}
+                            >
+                                <span>⚙️</span> AI Config
+                            </button>
+                            {activeTab === 'daily' && (
+                                <button
+                                    type="button"
+                                    className={`sync-google-btn ${dailyLoading ? 'syncing' : ''}`}
+                                    onClick={() => fetchDaily(true)}
+                                    title="Regenerate Daily AI Lead Pack"
+                                >
+                                    <span className="sync-icon">🔄</span>
+                                    {dailyLoading ? 'Generating...' : 'Refresh AI'}
+                                </button>
+                            )}
+                            {activeTab === 'directory' && (
+                                <button 
+                                    type="button" 
+                                    className={`sync-google-btn ${syncingGoogle ? 'syncing' : ''}`}
+                                    onClick={handleSyncGoogle}
+                                    title="Update live keywords from Google India"
+                                >
+                                    <span className="sync-icon">🔄</span>
+                                    {syncingGoogle ? 'Syncing...' : 'Sync Google'}
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* AI Section Mode Tabs */}
+                    <div className="ai-section-nav">
+                        <button
+                            type="button"
+                            className={`ai-nav-tab ${activeTab === 'daily' ? 'active' : ''}`}
+                            onClick={() => setActiveTab('daily')}
+                        >
+                            <span>🌟</span> Daily AI Opportunities
+                        </button>
+                        <button
+                            type="button"
+                            className={`ai-nav-tab ${activeTab === 'research' ? 'active-research' : ''}`}
+                            onClick={() => setActiveTab('research')}
+                        >
+                            <span>🔬</span> Deep AI Research
+                        </button>
+                        <button
+                            type="button"
+                            className={`ai-nav-tab ${activeTab === 'directory' ? 'active-directory' : ''}`}
+                            onClick={() => setActiveTab('directory')}
+                        >
+                            <span>📁</span> Category Directory
+                        </button>
+                    </div>
+
+                    {/* ================= TAB 1: DAILY AI OPPORTUNITIES ================= */}
+                    {activeTab === 'daily' && (
+                        <div>
+                            {/* Market Summary Banner */}
+                            {dailyData?.market_summary && (
+                                <div className="ai-market-summary-banner">
+                                    <div className="ai-summary-header">
+                                        <span className="ai-summary-tag">
+                                            <span>⚡</span> {dailyData.ai_generated ? 'Live AI Market Synthesis' : 'Curated High-Yield Baseline'}
+                                        </span>
+                                        <span className="ai-summary-time">{dailyData.last_updated}</span>
+                                    </div>
+                                    <p>{dailyData.market_summary}</p>
+                                </div>
+                            )}
+
+                            {/* Key Required Alert Box */}
+                            {dailyData?.key_required && (
+                                <div className="ai-key-alert-box">
+                                    <div className="ai-key-alert-left">
+                                        <span className="ai-key-alert-icon">🔑</span>
+                                        <div className="ai-key-alert-text">
+                                            <strong>AI Model Key Not Configured</strong>
+                                            <span>Add your Google Gemini API key to unlock real-time live market discovery daily.</span>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="ai-key-alert-btn"
+                                        onClick={onOpenAiSettings}
+                                    >
+                                        Configure Key ⚙️
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Recommendations Grid */}
+                            <div className="ai-recs-grid">
+                                {dailyLoading ? (
+                                    <div className="ai-empty-state">
+                                        <span>🤖</span>
+                                        <p>Synthesizing high-ROI market targets across Bihar & Jharkhand...</p>
+                                    </div>
+                                ) : (!dailyData?.items || dailyData.items.length === 0) ? (
+                                    <div className="ai-empty-state">
+                                        <span>🔍</span>
+                                        <p>No daily recommendations available. Click 'Refresh AI' above.</p>
+                                    </div>
+                                ) : (
+                                    dailyData.items.map((item, idx) => (
+                                        <div
+                                            key={`${item.keyword}-${idx}`}
+                                            className="rec-card"
+                                            onClick={() => onApply({
+                                                keyword: item.search_query || item.keyword,
+                                                recommended_city: item.city,
+                                                state: item.state,
+                                                category_id: item.mode === 'coaching' ? 'coaching' : 'general',
+                                                mode: item.mode || 'general'
+                                            })}
+                                        >
+                                            <div className="rec-top-meta">
+                                                <span className="rec-subcat-badge">
+                                                    <span>{item.category?.includes('Real Estate') ? '🏡' : (item.category?.includes('Coaching') ? '🎓' : (item.category?.includes('Healthcare') ? '🏥' : (item.category?.includes('Industrial') ? '🏭' : '⚡')))}</span>
+                                                    <span>{item.category}</span>
+                                                </span>
+                                                <span className="rec-tag-pill">
+                                                    {item.tag || '🔥 High Demand'}
+                                                </span>
+                                            </div>
+
+                                            <div className="rec-keyword-title">
+                                                {item.keyword}
+                                            </div>
+
+                                            <div className="rec-deal-info">
+                                                <div className="rec-deal-row">
+                                                    <span className="rec-deal-label">Ticket Size:</span>
+                                                    <span className="rec-deal-value">{item.ticket_size}</span>
+                                                </div>
+                                                <div className="rec-target-buyer">
+                                                    <strong>Target Buyer:</strong> {item.target_buyer}
+                                                </div>
+                                            </div>
+
+                                            {item.why_profitable && (
+                                                <div style={{ fontSize: '0.73rem', color: '#94a3b8', marginBottom: '0.55rem', lineHeight: '1.35' }}>
+                                                    💡 {item.why_profitable}
+                                                </div>
+                                            )}
+
+                                            <div className="rec-location-box">
+                                                <span className="rec-city-tag">
+                                                    <span>📍</span> {item.city}, {item.state}
+                                                </span>
+                                                {item.roi_score && (
+                                                    <span className="rec-roi-score-badge">
+                                                        ★ {item.roi_score}% ROI
+                                                    </span>
+                                                )}
+                                            </div>
+
+                                            <button
+                                                type="button"
+                                                className="rec-action-btn"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onApply({
+                                                        keyword: item.search_query || item.keyword,
+                                                        recommended_city: item.city,
+                                                        state: item.state,
+                                                        category_id: item.mode === 'coaching' ? 'coaching' : 'general',
+                                                        mode: item.mode || 'general'
+                                                    });
+                                                }}
+                                            >
+                                                <span>⚡</span> Auto-Fill & Scrape
+                                            </button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    )}
+
+                    {/* ================= TAB 2: DEEP AI RESEARCH ================= */}
+                    {activeTab === 'research' && (
+                        <div className="deep-research-wrap">
+                            <div className="research-control-card">
+                                <input
+                                    type="text"
+                                    className="research-input-main"
+                                    value={researchTopic}
+                                    onChange={(e) => setResearchTopic(e.target.value)}
+                                    placeholder="Enter any market research query (e.g. 'Bihta Airport Commercial Land Corridor', 'Rooftop Solar Vendors', 'Private Clinics in Dhanbad')..."
+                                    onKeyDown={(e) => { if (e.key === 'Enter') handleRunResearch(); }}
+                                />
+
+                                <div className="research-filters-grid">
+                                    <select
+                                        className="research-select"
+                                        value={researchSector}
+                                        onChange={(e) => setResearchSector(e.target.value)}
+                                    >
+                                        <option value="all">All Business Sectors</option>
+                                        <option value="Real Estate & Land">Real Estate & Plots</option>
+                                        <option value="Education & Coaching">Education & Coaching</option>
+                                        <option value="Healthcare & Diagnostics">Healthcare & Clinics</option>
+                                        <option value="Industrial & Contractors">Industrial & Contractors</option>
+                                        <option value="Energy & Solar">Energy & Solar EPC</option>
+                                        <option value="B2B Wholesale">B2B Wholesale & Supply</option>
+                                    </select>
+
+                                    <select
+                                        className="research-select"
+                                        value={researchRegion}
+                                        onChange={(e) => setResearchRegion(e.target.value)}
+                                    >
+                                        <option value="all">All Bihar & Jharkhand</option>
+                                        <option value="Patna & Corridor">Patna (Bihta, Ring Road)</option>
+                                        <option value="Ranchi & Ring Road">Ranchi (Ring Road, Tupudana)</option>
+                                        <option value="Jamshedpur Industrial">Jamshedpur & Adityapur</option>
+                                        <option value="Muzaffarpur Commercial">Muzaffarpur Commercial Hub</option>
+                                        <option value="Dhanbad Coal Belt">Dhanbad Energy Belt</option>
+                                        <option value="Gaya Magadh Hub">Gaya & Bodh Gaya Hub</option>
+                                    </select>
+
+                                    <select
+                                        className="research-select"
+                                        value={researchFocus}
+                                        onChange={(e) => setResearchFocus(e.target.value)}
+                                    >
+                                        <option value="all">Balanced Strategy</option>
+                                        <option value="High-Ticket Enterprise">High-Ticket / Enterprise</option>
+                                        <option value="Clear Title & Legal">Clear Title / RERA Verified</option>
+                                        <option value="Fast Turnaround Bulk">Fast Scrape & High Volume</option>
+                                    </select>
+                                </div>
+
+                                <span className="research-chips-label">Popular Research Targets (Click to Analyze):</span>
+                                <div className="research-chips-row">
+                                    {researchQuickChips.map((chip) => (
+                                        <button
+                                            key={chip}
+                                            type="button"
+                                            className="research-chip"
+                                            onClick={() => handleRunResearch(chip)}
+                                        >
+                                            {chip}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                <button
+                                    type="button"
+                                    className="research-launch-btn"
+                                    onClick={() => handleRunResearch()}
+                                    disabled={researchLoading}
+                                >
+                                    {researchLoading ? (
+                                        <><span>🔄</span> Conducting Deep Market Research...</>
+                                    ) : (
+                                        <><span>🔬</span> Launch Deep AI Market Research</>
+                                    )}
+                                </button>
+                            </div>
+
+                            {/* Research Error Notice */}
+                            {researchError && (
+                                <div className="ai-key-alert-box" style={{ background: 'rgba(239, 68, 68, 0.15)', borderColor: 'rgba(239, 68, 68, 0.4)' }}>
+                                    <div className="ai-key-alert-left">
+                                        <span className="ai-key-alert-icon">⚠️</span>
+                                        <div className="ai-key-alert-text">
+                                            <strong style={{ color: '#fca5a5' }}>Research Notice</strong>
+                                            <span style={{ color: 'rgba(252, 165, 165, 0.9)' }}>{researchError}</span>
+                                        </div>
+                                    </div>
+                                    <button
+                                        type="button"
+                                        className="ai-key-alert-btn"
+                                        style={{ background: 'linear-gradient(135deg, #ef4444, #b91c1c)' }}
+                                        onClick={onOpenAiSettings}
+                                    >
+                                        Open Settings ⚙️
+                                    </button>
+                                </div>
+                            )}
+
+                            {/* Research Output Display */}
+                            {researchResult && (
+                                <div className="research-results-box">
+                                    {/* Executive Summary Card */}
+                                    <div className="research-summary-card">
+                                        <div className="research-summary-top">
+                                            <strong style={{ color: '#c4b5fd', fontSize: '0.92rem' }}>
+                                                📊 Executive Market Intelligence: {researchResult.topic}
+                                            </strong>
+                                            {researchResult.market_potential && (
+                                                <span className="research-potential-pill">
+                                                    ★ {researchResult.market_potential} Potential
+                                                </span>
+                                            )}
+                                        </div>
+                                        <p className="research-summary-text">
+                                            {researchResult.executive_summary}
+                                        </p>
+
+                                        {researchResult.key_insights && researchResult.key_insights.length > 0 && (
+                                            <div className="research-insights-list">
+                                                {researchResult.key_insights.map((insight, i) => (
+                                                    <div key={i} className="research-insight-item">
+                                                        {insight}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+
+                                        <div className="research-meta-tags-row">
+                                            {researchResult.average_deal_size && (
+                                                <span className="research-meta-tag">
+                                                    Average Deal: <strong>{researchResult.average_deal_size}</strong>
+                                                </span>
+                                            )}
+                                            {researchResult.primary_buyer_persona && (
+                                                <span className="research-meta-tag">
+                                                    Target Decision Maker: <strong>{researchResult.primary_buyer_persona}</strong>
+                                                </span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Outreach Pitch Panel */}
+                                    {researchResult.outreach_strategy && (
+                                        <div className="research-strategy-card">
+                                            <strong>🎯 High-Converting Outreach Strategy:</strong>
+                                            {researchResult.outreach_strategy}
+                                        </div>
+                                    )}
+
+                                    {/* High-Yield Scraping Targets Grid */}
+                                    {researchResult.leads && researchResult.leads.length > 0 && (
+                                        <div>
+                                            <div className="directory-cat-label" style={{ marginBottom: '0.65rem' }}>
+                                                <span>Recommended Lead Scraping Targets ({researchResult.leads.length})</span>
+                                                <span className="focus-tag">★ Click to Auto-Fill & Scrape</span>
+                                            </div>
+                                            <div className="ai-recs-grid">
+                                                {researchResult.leads.map((lead, idx) => (
+                                                    <div
+                                                        key={`${lead.keyword}-${idx}`}
+                                                        className="rec-card"
+                                                        onClick={() => onApply({
+                                                            keyword: lead.search_query || lead.keyword,
+                                                            recommended_city: lead.city,
+                                                            state: lead.state,
+                                                            category_id: lead.mode === 'coaching' ? 'coaching' : 'general',
+                                                            mode: lead.mode || 'general'
+                                                        })}
+                                                    >
+                                                        <div className="rec-top-meta">
+                                                            <span className="rec-subcat-badge">
+                                                                <span>📍</span>
+                                                                <span>{lead.city}, {lead.state}</span>
+                                                            </span>
+                                                            <span className="rec-tag-pill">
+                                                                {lead.ticket_tier || 'High Ticket'}
+                                                            </span>
+                                                        </div>
+
+                                                        <div className="rec-keyword-title">
+                                                            {lead.keyword}
+                                                        </div>
+
+                                                        {lead.pitch_angle && (
+                                                            <div style={{ fontSize: '0.73rem', color: '#c4b5fd', margin: '0.35rem 0 0.55rem 0', lineHeight: '1.35' }}>
+                                                                💡 <strong>Angle:</strong> {lead.pitch_angle}
+                                                            </div>
+                                                        )}
+
+                                                        <div className="rec-location-box">
+                                                            <span className="rec-city-tag">
+                                                                <span>🔍</span> {lead.search_query || lead.keyword}
+                                                            </span>
+                                                            {lead.roi_score && (
+                                                                <span className="rec-roi-score-badge">
+                                                                    ★ {lead.roi_score}% ROI
+                                                                </span>
+                                                            )}
+                                                        </div>
+
+                                                        <button
+                                                            type="button"
+                                                            className="rec-action-btn"
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                onApply({
+                                                                    keyword: lead.search_query || lead.keyword,
+                                                                    recommended_city: lead.city,
+                                                                    state: lead.state,
+                                                                    category_id: lead.mode === 'coaching' ? 'coaching' : 'general',
+                                                                    mode: lead.mode || 'general'
+                                                                });
+                                                            }}
+                                                        >
+                                                            <span>⚡</span> Auto-Fill & Scrape
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {/* ================= TAB 3: CATEGORY DIRECTORY ================= */}
+                    {activeTab === 'directory' && (
+                        <div>
+                            {/* State Filter Tabs */}
+                            <div className="ai-state-filter">
+                                <button 
+                                    type="button" 
+                                    className={`state-btn ${state === 'all' ? 'active' : ''}`}
+                                    onClick={() => setState('all')}
+                                >
+                                    🌐 All Regions
+                                </button>
+                                <button 
+                                    type="button" 
+                                    className={`state-btn ${state === 'bihar' ? 'active-bihar' : ''}`}
+                                    onClick={() => setState('bihar')}
+                                >
+                                    🟢 Bihar Hubs
+                                </button>
+                                <button 
+                                    type="button" 
+                                    className={`state-btn ${state === 'jharkhand' ? 'active-jharkhand' : ''}`}
+                                    onClick={() => setState('jharkhand')}
+                                >
+                                    🟠 Jharkhand Hubs
+                                </button>
+                            </div>
+
+                            {/* Categories Section */}
+                            <div className="directory-cat-section">
+                                <div className="directory-cat-label">
+                                    <span>Category Directory</span>
+                                    {superCategory === 'realestate_plots' && (
+                                        <span className="focus-tag">★ Real Estate Plot Focus</span>
+                                    )}
+                                </div>
+
+                                {/* Super Categories */}
+                                <div className="super-cat-scroll">
+                                    <button 
+                                        type="button" 
+                                        className={`super-cat-btn ${superCategory === 'all' ? 'active' : ''}`}
+                                        onClick={() => handleSuperCategoryClick('all')}
+                                    >
+                                        <span>🌟</span>
+                                        <span>All Categories</span>
+                                        <span className="count-pill">100+</span>
+                                    </button>
+                                    {categories.map(cat => (
+                                        <button 
+                                            key={cat.id}
+                                            type="button" 
+                                            className={`super-cat-btn ${cat.id === 'realestate_plots' ? 'featured-tab' : ''} ${superCategory === cat.id ? 'active' : ''}`}
+                                            onClick={() => handleSuperCategoryClick(cat.id)}
+                                        >
+                                            <span>{cat.icon}</span>
+                                            <span>{cat.name}</span>
+                                            {cat.id === 'realestate_plots' && <span className="featured-star">★</span>}
+                                        </button>
+                                    ))}
+                                </div>
+
+                                {/* Sub-Categories */}
+                                {superCategory !== 'all' && activeSubCategories.length > 0 ? (
+                                    <div className="sub-cat-scroll">
+                                        <button 
+                                            type="button" 
+                                            className={`sub-cat-btn ${subCategory === 'all' ? 'active' : ''}`}
+                                            onClick={() => handleSubCategoryClick('all')}
+                                        >
+                                            <span>🌟</span> All {activeCategoryObj ? activeCategoryObj.name : 'Sub-Categories'}
+                                        </button>
+                                        {activeSubCategories.map(sub => (
+                                            <button 
+                                                key={sub.id}
+                                                type="button" 
+                                                className={`sub-cat-btn ${subCategory === sub.id ? 'active' : ''}`}
+                                                onClick={() => handleSubCategoryClick(sub.id)}
+                                            >
+                                                <span>{sub.icon}</span>
+                                                <span>{sub.name}</span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                ) : (
+                                    <div className="sub-cat-scroll">
+                                        <button 
+                                            type="button" 
+                                            className="sub-cat-btn active"
+                                            onClick={() => {}}
+                                        >
+                                            <span>✨</span> Top Recommendations Across All 11 Business Categories
+                                        </button>
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Search Box */}
+                            <form onSubmit={handleSearchSubmit} className="ai-search-box">
+                                <span className="ai-search-icon">🔍</span>
+                                <input 
+                                    type="text" 
+                                    className="ai-search-input"
+                                    value={searchQuery}
+                                    onChange={(e) => setSearchQuery(e.target.value)}
+                                    placeholder={superCategory === 'realestate_plots' 
+                                        ? "Search plot keywords or buyer targets (e.g. 'bihta plots', 'highway land', 'rera', 'commercial')..." 
+                                        : "Search any business keyword or target (e.g. 'dentist', 'coaching', 'plots', 'tmt steel', 'solar')..."}
+                                />
+                                {searchQuery && (
+                                    <button 
+                                        type="button" 
+                                        className="ai-search-clear" 
+                                        onClick={() => {
+                                            setSearchQuery("");
+                                            fetchRecs(state, superCategory, subCategory, "");
+                                        }}
+                                    >
+                                        ✕
+                                    </button>
+                                )}
+                            </form>
+
+                            {/* Recommendations Grid */}
+                            <div className={`ai-recs-grid ${dirLoading ? 'recs-grid-loading' : ''}`}>
+                                {dirLoading && recommendations.length === 0 ? (
+                                    <div className="ai-empty-state">
+                                        <span>🤖</span>
+                                        <p>Analyzing live commercial clusters in {state === 'all' ? 'Bihar & Jharkhand' : state.toUpperCase()}...</p>
+                                    </div>
+                                ) : (!dirLoading && recommendations.length === 0) ? (
+                                    <div className="ai-empty-state">
+                                        <span>🔍</span>
+                                        <p>No keywords found matching your search. Try searching for residential plots, bypass land, or RERA.</p>
+                                    </div>
+                                ) : (
+                                    recommendations.map((rec, idx) => (
+                                        <div 
+                                            key={`${rec.keyword}-${rec.recommended_city}-${idx}`}
+                                            className={`rec-card ${rec.is_google_live ? 'google-live-card' : ''}`}
+                                            onClick={() => onApply(rec)}
+                                        >
+                                            <div className="rec-top-meta">
+                                                <span className="rec-subcat-badge">
+                                                    <span>{rec.sub_category_icon || rec.category_icon}</span>
+                                                    <span>{rec.sub_category_name || rec.category_name}</span>
+                                                </span>
+                                                <span className={`rec-tag-pill ${rec.is_google_live ? 'google-live-pill' : ''}`}>
+                                                    {rec.is_google_live ? '🔴 Google Live' : rec.tag}
+                                                </span>
+                                            </div>
+
+                                            <div className="rec-keyword-title">
+                                                {rec.keyword}
+                                            </div>
+
+                                            <div className="rec-location-box">
+                                                <span className="rec-city-tag">
+                                                    <span>📍</span> {rec.recommended_city}, {rec.state}
+                                                </span>
+                                                <span className="rec-source-tag">
+                                                    📍 Google Maps
+                                                </span>
+                                            </div>
+
+                                            <button 
+                                                type="button" 
+                                                className="rec-action-btn"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    onApply(rec);
+                                                }}
+                                            >
+                                                <span>⚡</span> Auto-Fill & Scrape
+                                            </button>
+                                        </div>
+                                    ))
+                                )}
+                            </div>
+                        </div>
+                    )}
+                </div>
+            );
+        }
+
+        // All 38 Districts of Bihar + Major Commercial & Educational Hotspots
+        const ALL_BIHAR_CITIES = [
+            // Top Commercial & High-Demand Hubs (15)
+            { name: "Patna", region: "south", badge: "Capital • State Hub", top: true },
+            { name: "Muzaffarpur", region: "north", badge: "North Bihar Hub", top: true },
+            { name: "Gaya", region: "south", badge: "Tourism & Heritage", top: true },
+            { name: "Bhagalpur", region: "south", badge: "Silk City • Major Hub", top: true },
+            { name: "Darbhanga", region: "north", badge: "Airport & Cultural Hub", top: true },
+            { name: "Begusarai", region: "south", badge: "Industrial Capital", top: true },
+            { name: "Purnia", region: "north", badge: "Seemanchal Hub", top: true },
+            { name: "Hajipur", region: "north", badge: "Industrial Hub", top: true },
+            { name: "Ara", region: "south", badge: "Bhojpur Hub", top: true },
+            { name: "Bihar Sharif", region: "south", badge: "Nalanda Hub", top: true },
+            { name: "Samastipur", region: "north", badge: "Railway & Agri Hub", top: true },
+            { name: "Katihar", region: "north", badge: "Major Rail Junction", top: true },
+            { name: "Munger", region: "south", badge: "Historic & Commercial", top: true },
+            { name: "Chhapra", region: "north", badge: "Saran Division Hub", top: true },
+            { name: "Sasaram", region: "south", badge: "Rohtas Hub", top: true },
+
+            // North Bihar Districts & Commercial Towns
+            { name: "Bettiah", region: "north", badge: "West Champaran", top: false },
+            { name: "Motihari", region: "north", badge: "East Champaran", top: false },
+            { name: "Saharsa", region: "north", badge: "Kosi Division Hub", top: false },
+            { name: "Siwan", region: "north", badge: "Commercial Hub", top: false },
+            { name: "Gopalganj", region: "north", badge: "Agri & Sugar Hub", top: false },
+            { name: "Sitamarhi", region: "north", badge: "Border & Trade Hub", top: false },
+            { name: "Madhubani", region: "north", badge: "Culture & Art Hub", top: false },
+            { name: "Kishanganj", region: "north", badge: "Tea & Seemanchal Hub", top: false },
+            { name: "Araria", region: "north", badge: "Border Commercial", top: false },
+            { name: "Supaul", region: "north", badge: "Kosi Region", top: false },
+            { name: "Madhepura", region: "north", badge: "Locomotive Hub", top: false },
+            { name: "Sheohar", region: "north", badge: "Tirhut Region", top: false },
+            { name: "Khagaria", region: "north", badge: "Commercial Hub", top: false },
+
+            // South Bihar Districts & Commercial Towns
+            { name: "Buxar", region: "south", badge: "Historic Trade Hub", top: false },
+            { name: "Nawada", region: "south", badge: "Agri & Trade Hub", top: false },
+            { name: "Aurangabad", region: "south", badge: "Energy & Highway Hub", top: false },
+            { name: "Dehri", region: "south", badge: "Industrial Hub", top: false },
+            { name: "Jamui", region: "south", badge: "Commercial Hub", top: false },
+            { name: "Jehanabad", region: "south", badge: "Central Bihar Hub", top: false },
+            { name: "Banka", region: "south", badge: "Agri & Mining", top: false },
+            { name: "Lakhisarai", region: "south", badge: "Railway Junction", top: false },
+            { name: "Sheikhpura", region: "south", badge: "Trade Hub", top: false },
+            { name: "Arwal", region: "south", badge: "Agri Hub", top: false },
+            { name: "Bhabua", region: "south", badge: "Kaimur Hub", top: false },
+            { name: "Bihta", region: "south", badge: "Patna IT / Industrial Hub", top: false },
+            { name: "Danapur", region: "south", badge: "Greater Patna", top: false },
+            { name: "Bodh Gaya", region: "south", badge: "International Tourism", top: false }
+        ];
+
         function LeadScraperApp() {
-            const [mode, setMode] = useState("general"); // 'general' | 'coaching'
-            const [platform, setPlatform] = useState("google"); // 'google' | 'bing'
+            const [mode, setMode] = useState("general"); // 'general' | 'coaching' | 'bihar_directory'
+            const [directorySource, setDirectorySource] = useState("all"); // 'all' | 'iyp' | 'ei'
             const [keyword, setKeyword] = useState("");
             const [city, setCity] = useState("");
             const [status, setStatus] = useState("idle"); // 'idle' | 'running' | 'completed' | 'error'
             const [statusMessage, setStatusMessage] = useState("");
+            const [scrapeProgress, setScrapeProgress] = useState({
+                count: 0,
+                total: 100,
+                percent: 0,
+                elapsed_seconds: 0,
+                elapsed_text: "0s",
+                eta_seconds: null,
+                eta_text: "Estimating time remaining...",
+                speed: "--",
+                message: ""
+            });
             const [activeChip, setActiveChip] = useState(null);
+            const [appliedHighlight, setAppliedHighlight] = useState(false);
+            const [toastMessage, setToastMessage] = useState("");
+            const [showAiModal, setShowAiModal] = useState(false);
+            const [aiConfig, setAiConfig] = useState({ has_key: false, masked_key: '', provider: 'gemini', model: 'gemini-2.0-flash' });
 
-            // Sync body class and canvas color with active mode and platform
+            // Fetch AI config on mount
+            useEffect(() => {
+                fetch('/api/ai/config')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data) setAiConfig(data);
+                    })
+                    .catch(err => console.error("Error loading AI config:", err));
+            }, []);
+
+            const [biharPresets, setBiharPresets] = useState([
+                { label: "🏡 Real Estate & Plots", query: "real estate agents" },
+                { label: "🎓 Coaching & Academies", query: "coaching classes" },
+                { label: "🏗️ Building Contractors", query: "building contractors" },
+                { label: "🏥 Hospitals & Clinics", query: "hospitals" },
+                { label: "📦 Packers & Movers", query: "packers and movers" },
+                { label: "🎨 Interior Designers", query: "interior designers" },
+                { label: "⚡ Solar Energy EPC", query: "solar energy" },
+                { label: "💼 CA & Tax Consultants", query: "chartered accountants" }
+            ]);
+            const [biharCities, setBiharCities] = useState([
+                "Patna", "Muzaffarpur", "Gaya", "Bhagalpur", "Begusarai", "Darbhanga", "Purnia", "Bihar Sharif"
+            ]);
+
+            const indiamartPresetsList = [
+                { label: "💊 Pharma Distributors", query: "pharmaceutical-distributors" },
+                { label: "🧱 Building Materials", query: "building-materials" },
+                { label: "⚙️ Industrial Machinery", query: "industrial-machinery" },
+                { label: "🧪 Chemicals & Solvents", query: "chemicals" },
+                { label: "📦 Packaging Materials", query: "packaging-boxes" },
+                { label: "☀️ Solar Panels & Inverters", query: "solar-panels" },
+                { label: "⚡ Electrical Goods", query: "electrical-goods" },
+                { label: "🚜 Agricultural Equipment", query: "agricultural-implements" }
+            ];
+
+            // Fetch Bihar Directory Presets on mount
+            useEffect(() => {
+                fetch('/api/bihar_directory/presets')
+                    .then(res => res.json())
+                    .then(data => {
+                        if (data.presets) setBiharPresets(data.presets);
+                        if (data.cities) setBiharCities(data.cities);
+                    })
+                    .catch(err => console.error("Error fetching bihar presets:", err));
+            }, []);
+
+            // Sync body class and canvas color with active mode
             useEffect(() => {
                 const body = document.body;
                 body.className = '';
-                if (platform === 'bing') body.classList.add('theme-bing');
                 if (mode === 'coaching') body.classList.add('mode-coaching');
-                updateCanvasTheme(mode, platform);
-            }, [mode, platform]);
+                if (mode === 'bihar_directory') body.classList.add('mode-bihar-dir');
+                if (mode === 'indiamart') body.classList.add('mode-indiamart');
+                updateCanvasTheme(mode);
+            }, [mode]);
 
-            const isBing = platform === 'bing';
-            const limit = isBing ? 100 : 200;
-            const platformName = isBing ? "Bing Maps" : "Google Maps";
+            const [limit, setLimit] = useState(100);
+            const platformName = mode === 'bihar_directory' 
+                ? "Bihar Local Directory" 
+                : (mode === 'indiamart' ? "IndiaMART B2B Directory" : "Google Maps");
 
             const handleModeChange = (newMode) => {
                 setMode(newMode);
                 setActiveChip(null);
                 setKeyword("");
+                if ((newMode === 'bihar_directory' || newMode === 'indiamart') && !city) {
+                    setCity("Patna");
+                }
             };
 
             const handleChipClick = (niche) => {
@@ -228,14 +1437,103 @@
                 setKeyword(niche);
             };
 
+            const handleApplyRecommendation = (rec) => {
+                setKeyword(rec.keyword);
+                setCity(rec.recommended_city);
+                if (rec.category_id === 'coaching') {
+                    setMode('coaching');
+                } else {
+                    setMode('general');
+                }
+                setActiveChip(null);
+                setAppliedHighlight(true);
+                setTimeout(() => setAppliedHighlight(false), 1400);
+
+                setToastMessage(`⚡ Auto-filled: "${rec.keyword}" in ${rec.recommended_city}, ${rec.state} (Google Maps)`);
+                setTimeout(() => setToastMessage(""), 3500);
+
+                const formElem = document.getElementById('scraper-form-card');
+                if (formElem && window.innerWidth < 1100) {
+                    formElem.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            };
+
+            const handleToast = (msg) => {
+                setToastMessage(msg);
+                setTimeout(() => setToastMessage(""), 3500);
+            };
+
+            const [showCityDropdown, setShowCityDropdown] = useState(false);
+            const [cityRegionFilter, setCityRegionFilter] = useState('all'); // 'all' | 'top' | 'north' | 'south'
+            const cityDropdownRef = useRef(null);
+
+            // Close city dropdown on outside click
+            useEffect(() => {
+                const handleClickOutside = (event) => {
+                    if (cityDropdownRef.current && !cityDropdownRef.current.contains(event.target)) {
+                        setShowCityDropdown(false);
+                    }
+                };
+                document.addEventListener('mousedown', handleClickOutside);
+                return () => document.removeEventListener('mousedown', handleClickOutside);
+            }, []);
+
+            const handleSelectBiharCity = (cityName) => {
+                setCity(cityName);
+                setShowCityDropdown(false);
+                setAppliedHighlight(true);
+                setTimeout(() => setAppliedHighlight(false), 1200);
+                handleToast(`📍 Selected ${cityName}, Bihar`);
+            };
+
+            const filteredBiharCities = ALL_BIHAR_CITIES.filter(c => {
+                if (cityRegionFilter === 'top' && !c.top) return false;
+                if (cityRegionFilter === 'north' && c.region !== 'north') return false;
+                if (cityRegionFilter === 'south' && c.region !== 'south') return false;
+
+                if (city && city.trim()) {
+                    const isExactSelected = ALL_BIHAR_CITIES.some(item => item.name.toLowerCase() === city.trim().toLowerCase());
+                    if (!isExactSelected) {
+                        const q = city.trim().toLowerCase();
+                        return c.name.toLowerCase().includes(q) || c.badge.toLowerCase().includes(q);
+                    }
+                }
+                return true;
+            });
+
             const startScraping = async () => {
+                const nicheLabel = mode === 'coaching' 
+                    ? 'coaching category' 
+                    : (mode === 'bihar_directory' 
+                        ? 'directory category' 
+                        : (mode === 'indiamart' ? 'IndiaMART product/service' : 'business niche'));
                 if (!keyword.trim() || !city.trim()) {
-                    alert(`Please enter both a ${mode === 'coaching' ? 'coaching category' : 'niche'} and a target city.`);
+                    alert(`Please enter both a ${nicheLabel} and a target city.`);
                     return;
                 }
 
                 setStatus("running");
-                setStatusMessage(`Chrome is launching in the background. Searching and extracting up to ${limit} leads with verified phone numbers from ${platformName}...`);
+                let startMsg = `Chrome is launching in the background. Searching and extracting up to ${limit} leads from Google Maps...`;
+                if (mode === 'coaching') {
+                    startMsg = `Searching Google Maps & verifying official websites for up to ${limit} coaching leads...`;
+                } else if (mode === 'bihar_directory') {
+                    const srcLabel = directorySource === 'iyp' ? 'IndianYellowPages' : (directorySource === 'ei' ? 'ExportersIndia' : 'Bihar Local Directories');
+                    startMsg = `Querying bot-safe ${srcLabel} for '${keyword}' in ${city}...`;
+                } else if (mode === 'indiamart') {
+                    startMsg = `Launching Playwright Chromium & extracting verified B2B suppliers from IndiaMART for '${keyword}' in ${city}...`;
+                }
+                setStatusMessage(startMsg);
+                setScrapeProgress({
+                    count: 0,
+                    total: limit,
+                    percent: 0,
+                    elapsed_seconds: 0,
+                    elapsed_text: "0s",
+                    eta_seconds: null,
+                    eta_text: mode === 'indiamart' ? "Launching Playwright..." : "Launching Chrome & Maps...",
+                    speed: "--",
+                    message: startMsg
+                });
 
                 try {
                     const response = await fetch('/api/scrape', {
@@ -244,8 +1542,11 @@
                         body: JSON.stringify({
                             keyword: keyword.trim(),
                             city: city.trim(),
-                            source: platform,
-                            target_count: limit
+                            source: mode === 'bihar_directory' ? 'bihar_directory' : (mode === 'indiamart' ? 'indiamart' : 'google'),
+                            target_count: limit,
+                            mode: mode,
+                            require_website: mode === 'coaching',
+                            directory_source: directorySource
                         })
                     });
 
@@ -258,21 +1559,38 @@
                             const statusRes = await fetch(`/api/status/${jobId}`);
                             const statusData = await statusRes.json();
 
-                            if (statusData.status === 'completed') {
-                                clearInterval(pollInterval);
-                                setStatus("completed");
-                                setStatusMessage(statusData.message);
-                            } else if (statusData.status === 'error') {
-                                clearInterval(pollInterval);
-                                setStatus("error");
-                                setStatusMessage(statusData.message);
+                            if (statusData) {
+                                if (statusData.message) {
+                                    setStatusMessage(statusData.message);
+                                }
+                                setScrapeProgress(prev => ({
+                                    count: statusData.count !== undefined ? statusData.count : prev.count,
+                                    total: statusData.total || limit,
+                                    percent: statusData.percent !== undefined ? statusData.percent : prev.percent,
+                                    elapsed_seconds: statusData.elapsed_seconds !== undefined ? statusData.elapsed_seconds : prev.elapsed_seconds,
+                                    elapsed_text: statusData.elapsed_text || prev.elapsed_text,
+                                    eta_seconds: statusData.eta_seconds,
+                                    eta_text: statusData.eta_text || prev.eta_text,
+                                    speed: statusData.speed || prev.speed,
+                                    message: statusData.message || prev.message
+                                }));
+
+                                if (statusData.status === 'completed') {
+                                    clearInterval(pollInterval);
+                                    setStatus("completed");
+                                    setStatusMessage(statusData.message);
+                                } else if (statusData.status === 'error') {
+                                    clearInterval(pollInterval);
+                                    setStatus("error");
+                                    setStatusMessage(statusData.message);
+                                }
                             }
                         } catch (err) {
                             clearInterval(pollInterval);
                             setStatus("error");
                             setStatusMessage("Connection interrupted while checking scrape progress.");
                         }
-                    }, 3000);
+                    }, 2000);
 
                 } catch (err) {
                     setStatus("error");
@@ -282,225 +1600,771 @@
 
             return (
                 <motion.div 
-                    className="container"
-                    initial={{ opacity: 0, y: 25 }}
+                    className="container dashboard-container"
+                    initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
+                    transition={{ duration: 0.6, ease: [0.22, 1, 0.36, 1] }}
                 >
-                    {/* Top Mode Selector Tabs */}
-                    <div className="mode-tabs">
-                        <div 
-                            className="mode-tab-indicator" 
-                            style={{ 
-                                width: 'calc(50% - 6px)',
-                                left: mode === 'general' ? '5px' : 'calc(50% + 1px)'
-                            }}
-                        />
-                        <button 
-                            type="button" 
-                            className={`mode-tab ${mode === 'general' ? 'active' : ''}`}
-                            onClick={() => handleModeChange('general')}
-                        >
-                            <span>🏢</span> General Businesses
-                        </button>
-                        <button 
-                            type="button" 
-                            className={`mode-tab ${mode === 'coaching' ? 'active' : ''}`}
-                            onClick={() => handleModeChange('coaching')}
-                        >
-                            <span>🎓</span> Coaching & Institutes
-                        </button>
-                    </div>
-
-                    {/* Header */}
+                    {/* Header Navbar */}
                     <header>
-                        <motion.h1
-                            key={mode}
-                            initial={{ opacity: 0, y: -10 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.4 }}
-                        >
-                            LeadGen<span className="highlight">Pro</span>
-                        </motion.h1>
-                        <p>
-                            {mode === 'coaching' 
-                                ? "Specialized Coaching & Academy Lead Scraper (Phone Verified)"
-                                : "Automated Google & Bing Maps Deep Scraper (Phone Verified)"}
-                        </p>
-                        <div className="designer-tag">
-                            <span>⚡</span> Designed by <strong>Siddhant Sinha</strong>
+                        <div className="header-left">
+                            <h1>
+                                LeadGen<span className="highlight">Pro</span>
+                            </h1>
+                            <p>
+                                {mode === 'bihar_directory'
+                                    ? "Bihar Local Directory Engine (IndianYellowPages & ExportersIndia • Bot-Safe)"
+                                    : (mode === 'coaching' 
+                                        ? "Specialized Coaching & Institutes Scraper (Website & Phone Verified)"
+                                        : "Google Maps Deep Scraper • Business & Real Estate Intelligence")}
+                            </p>
+                        </div>
+                        <div className="header-right">
+                            <button 
+                                type="button" 
+                                className={`ai-key-badge-btn ${aiConfig.has_key ? 'connected' : 'key-needed'}`}
+                                onClick={() => setShowAiModal(true)}
+                                title="Configure AI Model & API Key"
+                            >
+                                <div className={`ai-badge-dot ${aiConfig.has_key ? '' : 'amber'}`}></div>
+                                <span>{aiConfig.has_key ? `AI Active (${aiConfig.model})` : '🔑 Setup AI Key'}</span>
+                            </button>
+                            <div className="google-sync-badge">
+                                <div className="sync-pulse"></div>
+                                <span>Google Live Synced</span>
+                            </div>
+                            <div className="designer-tag" style={{ margin: 0 }}>
+                                <span>⚡</span> Designed by <strong>Siddhant Sinha</strong>
+                            </div>
                         </div>
                     </header>
 
-                    {/* Main Glassmorphism Card */}
-                    <motion.div 
-                        className="card glassmorphism"
-                        layout
-                        transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                    >
-                        {/* Coaching Special Badge */}
-                        <AnimatePresence>
-                            {mode === 'coaching' && (
-                                <motion.div 
-                                    className="coaching-badge"
-                                    initial={{ opacity: 0, scale: 0.9 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    exit={{ opacity: 0, scale: 0.9 }}
-                                    transition={{ duration: 0.3 }}
-                                >
-                                    <div className="pulse-dot"></div>
-                                    <span>Targeted Coaching, Academy & Tuition Hubs</span>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-
-                        {/* Platform Toggle Switch */}
-                        <div className="toggle-container">
-                            <label className="toggle-label">Target Platform & Limit</label>
-                            <div className="platform-switch">
+                    {/* Dual Column Dashboard Layout */}
+                    <div className="dashboard-grid">
+                        {/* Left Column: Scraper Form Card */}
+                        <div className="scraper-column">
+                            {/* Top Mode Selector Tabs (4 Modes) */}
+                            <div className="mode-tabs">
                                 <div 
-                                    className="switch-indicator" 
-                                    style={{
-                                        width: 'calc(50% - 6px)',
-                                        left: platform === 'google' ? '4px' : 'calc(50% + 2px)'
+                                    className="mode-tab-indicator" 
+                                    style={{ 
+                                        width: 'calc(25% - 4px)',
+                                        left: mode === 'general' ? '4px' : (mode === 'coaching' ? 'calc(25% + 2px)' : (mode === 'bihar_directory' ? 'calc(50% + 1px)' : 'calc(75% + 0px)'))
                                     }}
                                 />
                                 <button 
                                     type="button" 
-                                    className={`switch-option ${platform === 'google' ? 'active' : ''}`}
-                                    onClick={() => setPlatform('google')}
+                                    className={`mode-tab ${mode === 'general' ? 'active' : ''}`}
+                                    onClick={() => handleModeChange('general')}
+                                    title="General Google Maps Scraper"
                                 >
-                                    <span className="platform-icon">📍</span>
-                                    <span>Google Maps (200)</span>
+                                    <span>🏢</span> <span className="tab-label">General</span>
                                 </button>
                                 <button 
                                     type="button" 
-                                    className={`switch-option ${platform === 'bing' ? 'active' : ''}`}
-                                    onClick={() => setPlatform('bing')}
+                                    className={`mode-tab ${mode === 'coaching' ? 'active' : ''}`}
+                                    onClick={() => handleModeChange('coaching')}
+                                    title="Coaching & Institutes Scraper"
                                 >
-                                    <span className="platform-icon">🌐</span>
-                                    <span>Bing Maps (100)</span>
+                                    <span>🎓</span> <span className="tab-label">Coaching</span>
                                 </button>
+                                <button 
+                                    type="button" 
+                                    className={`mode-tab ${mode === 'bihar_directory' ? 'active' : ''}`}
+                                    onClick={() => handleModeChange('bihar_directory')}
+                                    title="Bihar Local Directory (Bot-Safe)"
+                                >
+                                    <span>🗺️</span> <span className="tab-label">Bihar Dir</span>
+                                </button>
+                                <button 
+                                    type="button" 
+                                    className={`mode-tab ${mode === 'indiamart' ? 'active' : ''}`}
+                                    onClick={() => handleModeChange('indiamart')}
+                                    title="IndiaMART B2B Directory (Playwright Engine)"
+                                >
+                                    <span>💼</span> <span className="tab-label">IndiaMART</span>
+                                </button>
+                            </div>
+
+                            <div 
+                                id="scraper-form-card"
+                                className="card glassmorphism"
+                            >
+                                {/* Coaching Special Badge */}
+                                <AnimatePresence>
+                                    {mode === 'coaching' && (
+                                        <motion.div 
+                                            className="coaching-badge"
+                                            initial={{ opacity: 0, scale: 0.9 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            exit={{ opacity: 0, scale: 0.9 }}
+                                            transition={{ duration: 0.3 }}
+                                        >
+                                            <div className="pulse-dot"></div>
+                                            <span>Targeted Coaching & Institutes • Website Verified</span>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+
+                                {/* Coaching Website Filter Notice */}
+                                <AnimatePresence>
+                                    {mode === 'coaching' && (
+                                        <motion.div 
+                                            className="coaching-website-filter-banner"
+                                            initial={{ opacity: 0, y: -8 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -8 }}
+                                            transition={{ duration: 0.3 }}
+                                        >
+                                            <span className="banner-icon">🌐</span>
+                                            <div>
+                                                <strong>Institute Website & Phone Verification Active</strong>
+                                                <p>Scrapes local institutes with official websites, extracting verified details directly from their sites & listings.</p>
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+
+                                {/* Bihar Local Directory Badge */}
+                                <AnimatePresence>
+                                    {mode === 'bihar_directory' && (
+                                        <motion.div 
+                                            className="bihar-badge"
+                                            initial={{ opacity: 0, scale: 0.9 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            exit={{ opacity: 0, scale: 0.9 }}
+                                            transition={{ duration: 0.3 }}
+                                        >
+                                            <div className="bihar-pulse-dot"></div>
+                                            <span>🗺️ Bihar Local Directory • 100% Bot-Safe & Direct</span>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+
+                                {/* Bihar Local Directory Banner */}
+                                <AnimatePresence>
+                                    {mode === 'bihar_directory' && (
+                                        <motion.div 
+                                            className="bihar-directory-banner"
+                                            initial={{ opacity: 0, y: -8 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -8 }}
+                                            transition={{ duration: 0.3 }}
+                                        >
+                                            <span className="banner-icon">⚡</span>
+                                            <div>
+                                                <strong>Bot-Safe Directory Extraction Active</strong>
+                                                <p>Extracts verified local business leads directly from IndianYellowPages & ExportersIndia Bihar without bot blocking or captchas.</p>
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+
+                                {/* IndiaMART B2B Badge */}
+                                <AnimatePresence>
+                                    {mode === 'indiamart' && (
+                                        <motion.div 
+                                            className="indiamart-badge"
+                                            initial={{ opacity: 0, scale: 0.9 }}
+                                            animate={{ opacity: 1, scale: 1 }}
+                                            exit={{ opacity: 0, scale: 0.9 }}
+                                            transition={{ duration: 0.3 }}
+                                        >
+                                            <div className="indiamart-pulse-dot"></div>
+                                            <span>💼 IndiaMART B2B Directory • Verified Suppliers & Direct PNS Contacts</span>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+
+                                {/* IndiaMART B2B Banner */}
+                                <AnimatePresence>
+                                    {mode === 'indiamart' && (
+                                        <motion.div 
+                                            className="indiamart-directory-banner"
+                                            initial={{ opacity: 0, y: -8 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: -8 }}
+                                            transition={{ duration: 0.3 }}
+                                        >
+                                            <span className="banner-icon">💼</span>
+                                            <div>
+                                                <strong>Playwright Chromium B2B Extraction Active</strong>
+                                                <p>Extracts verified supplier names, 10-digit PNS phone numbers, and profile URLs directly from IndiaMART directory listings.</p>
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+
+                                {/* Directory Data Source Selector */}
+                                {mode === 'bihar_directory' && (
+                                    <div className="dir-source-section">
+                                        <label className="dir-source-label">Directory Data Source</label>
+                                        <div className="dir-source-group">
+                                            <button 
+                                                type="button" 
+                                                className={`dir-source-btn ${directorySource === 'all' ? 'active' : ''}`}
+                                                onClick={() => setDirectorySource('all')}
+                                                title="All Sources (IndianYellowPages + ExportersIndia)"
+                                            >
+                                                <span>⚡</span> <span className="btn-label">All Sources</span>
+                                            </button>
+                                            <button 
+                                                type="button" 
+                                                className={`dir-source-btn ${directorySource === 'iyp' ? 'active' : ''}`}
+                                                onClick={() => setDirectorySource('iyp')}
+                                                title="IndianYellowPages Bihar"
+                                            >
+                                                <span>🇮🇳</span> <span className="btn-label">IndianYP</span>
+                                            </button>
+                                            <button 
+                                                type="button" 
+                                                className={`dir-source-btn ${directorySource === 'ei' ? 'active' : ''}`}
+                                                onClick={() => setDirectorySource('ei')}
+                                                title="ExportersIndia Bihar Directory"
+                                            >
+                                                <span>🏢</span> <span className="btn-label">ExportersIndia</span>
+                                            </button>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* Google Maps Engine Banner (for General and Coaching modes) */}
+                                {mode !== 'bihar_directory' && mode !== 'indiamart' && (
+                                    <div className="platform-banner">
+                                        <div className="platform-banner-left">
+                                             <span className="platform-icon">📍</span>
+                                             <span>Google Maps Multi-Hub Engine</span>
+                                        </div>
+                                        <span className="platform-banner-pill">
+                                             <span>⚡</span> {limit} Leads Target
+                                        </span>
+                                    </div>
+                                )}
+
+                                {/* IndiaMART Engine Banner */}
+                                {mode === 'indiamart' && (
+                                    <div className="platform-banner" style={{ background: 'rgba(0, 166, 153, 0.12)', borderColor: 'rgba(0, 166, 153, 0.3)' }}>
+                                        <div className="platform-banner-left">
+                                             <span className="platform-icon">💼</span>
+                                             <span style={{ color: '#5eead4' }}>IndiaMART B2B Playwright Engine</span>
+                                        </div>
+                                        <span className="platform-banner-pill" style={{ background: 'rgba(0, 166, 153, 0.22)', borderColor: 'rgba(0, 166, 153, 0.4)', color: '#2dd4bf' }}>
+                                             <span>⚡</span> {limit} Leads Target
+                                        </span>
+                                    </div>
+                                )}
+
+                                {/* Target Leads Count Selector */}
+                                <div className="target-limit-selector" style={{ margin: '14px 0 10px 0' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <label style={{ fontSize: '0.85rem', fontWeight: 600, color: 'var(--text-secondary)' }}>
+                                            🎯 Target Leads Volume (Multi-Hub Extraction)
+                                        </label>
+                                        <span style={{ fontSize: '0.82rem', fontWeight: 700, color: 'var(--primary-color)' }}>
+                                            {limit} Verified Leads
+                                        </span>
+                                    </div>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '8px' }}>
+                                        {[100, 200, 300, 400].map(val => (
+                                            <button
+                                                key={val}
+                                                type="button"
+                                                onClick={() => setLimit(val)}
+                                                style={{
+                                                    padding: '8px 10px',
+                                                    borderRadius: '8px',
+                                                    border: limit === val ? '1.5px solid var(--primary-color)' : '1px solid rgba(255,255,255,0.1)',
+                                                    background: limit === val ? 'rgba(99, 102, 241, 0.22)' : 'rgba(255,255,255,0.04)',
+                                                    color: limit === val ? '#fff' : 'var(--text-secondary)',
+                                                    cursor: 'pointer',
+                                                    fontSize: '0.82rem',
+                                                    fontWeight: limit === val ? 700 : 500,
+                                                    transition: 'all 0.2s ease',
+                                                    display: 'flex',
+                                                    flexDirection: 'column',
+                                                    alignItems: 'center',
+                                                    gap: '2px'
+                                                }}
+                                            >
+                                                <span>{val} Leads</span>
+                                                <span style={{ fontSize: '0.68rem', opacity: 0.75 }}>
+                                                    {val === 100 ? 'Minimum' : (val === 400 ? 'Maximum' : 'Fast Bulk')}
+                                                </span>
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Bihar Directory Quick Preset Chips */}
+                                <AnimatePresence>
+                                    {mode === 'bihar_directory' && (
+                                        <motion.div 
+                                            className="coaching-chips"
+                                            initial={{ opacity: 0, height: 0 }}
+                                            animate={{ opacity: 1, height: 'auto' }}
+                                            exit={{ opacity: 0, height: 0 }}
+                                            transition={{ duration: 0.35 }}
+                                        >
+                                            <label className="chips-title">Popular Bihar Directory Niches (Click to Fill)</label>
+                                            <div className="chips-container">
+                                                {biharPresets.map((preset) => (
+                                                    <motion.button
+                                                        key={preset.label}
+                                                        type="button"
+                                                        className={`preset-chip ${activeChip === preset.query ? 'active' : ''}`}
+                                                        onClick={() => {
+                                                            setActiveChip(preset.query);
+                                                            setKeyword(preset.query);
+                                                            if (!city) setCity("Patna");
+                                                        }}
+                                                        whileHover={{ scale: 1.04, y: -2 }}
+                                                        whileTap={{ scale: 0.97 }}
+                                                    >
+                                                        {preset.label}
+                                                    </motion.button>
+                                                ))}
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+
+                                {/* Coaching Quick Preset Chips */}
+                                <AnimatePresence>
+                                    {mode === 'coaching' && (
+                                        <motion.div 
+                                            className="coaching-chips"
+                                            initial={{ opacity: 0, height: 0 }}
+                                            animate={{ opacity: 1, height: 'auto' }}
+                                            exit={{ opacity: 0, height: 0 }}
+                                            transition={{ duration: 0.35 }}
+                                        >
+                                            <label className="chips-title">Popular Coaching Niches (Click to Auto-fill)</label>
+                                            <div className="chips-container">
+                                                {coachingPresetsList.map((preset, idx) => (
+                                                    <motion.button
+                                                        key={preset}
+                                                        type="button"
+                                                        className={`preset-chip ${activeChip === preset ? 'active' : ''}`}
+                                                        onClick={() => handleChipClick(preset)}
+                                                        whileHover={{ scale: 1.04, y: -2 }}
+                                                        whileTap={{ scale: 0.97 }}
+                                                    >
+                                                        {preset}
+                                                    </motion.button>
+                                                ))}
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+
+                                {/* IndiaMART Quick Preset Chips */}
+                                <AnimatePresence>
+                                    {mode === 'indiamart' && (
+                                        <motion.div 
+                                            className="coaching-chips"
+                                            initial={{ opacity: 0, height: 0 }}
+                                            animate={{ opacity: 1, height: 'auto' }}
+                                            exit={{ opacity: 0, height: 0 }}
+                                            transition={{ duration: 0.35 }}
+                                        >
+                                            <label className="chips-title">Popular IndiaMART B2B Categories (Click to Fill)</label>
+                                            <div className="chips-container">
+                                                {indiamartPresetsList.map((preset, idx) => (
+                                                    <motion.button
+                                                        key={preset.label}
+                                                        type="button"
+                                                        className={`preset-chip ${activeChip === preset.query ? 'active' : ''}`}
+                                                        onClick={() => {
+                                                            setActiveChip(preset.query);
+                                                            setKeyword(preset.query);
+                                                            if (!city) setCity("Patna");
+                                                        }}
+                                                        whileHover={{ scale: 1.04, y: -2 }}
+                                                        whileTap={{ scale: 0.97 }}
+                                                    >
+                                                        {preset.label}
+                                                    </motion.button>
+                                                ))}
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+
+                                {/* Inputs */}
+                                <div className="input-group">
+                                    <label htmlFor="keyword">
+                                        {mode === 'bihar_directory' 
+                                            ? 'Directory Business Category' 
+                                            : (mode === 'coaching' 
+                                                ? 'Coaching / Course Category' 
+                                                : (mode === 'indiamart' ? 'IndiaMART Product / Supplier Category' : 'Business Niche'))}
+                                    </label>
+                                    <input 
+                                        type="text" 
+                                        id="keyword"
+                                        className={appliedHighlight ? 'highlight-flash' : ''}
+                                        value={keyword}
+                                        onChange={(e) => {
+                                            setKeyword(e.target.value);
+                                            setActiveChip(null);
+                                        }}
+                                        placeholder={mode === 'bihar_directory'
+                                            ? 'e.g. Real Estate Agents, Building Contractors, Hospitals'
+                                            : (mode === 'coaching' 
+                                                ? 'e.g. IIT JEE Coaching, NEET Academy' 
+                                                : (mode === 'indiamart' ? 'e.g. pharmaceutical-distributors, chemicals, industrial-machinery' : 'e.g. Restaurants, Plumbers, Dentists, Gyms'))}
+                                    />
+                                </div>
+
+                                <div className="input-group city-input-group" ref={cityDropdownRef}>
+                                    <div className="city-input-label-row">
+                                        <label htmlFor="city">
+                                            {mode === 'bihar_directory' 
+                                                ? 'Target Bihar Hub / District' 
+                                                : (mode === 'coaching' 
+                                                    ? 'Target City / Education Hub' 
+                                                    : (mode === 'indiamart' ? 'Target City / Commercial Hub' : 'Target City / District'))}
+                                        </label>
+                                        <button 
+                                            type="button" 
+                                            className="browse-bihar-btn"
+                                            onClick={() => setShowCityDropdown(prev => !prev)}
+                                            title="Browse all 38 districts of Bihar"
+                                        >
+                                            <span>📍</span> {showCityDropdown ? 'Close Bihar Cities' : 'All 38 Bihar Districts'}
+                                        </button>
+                                    </div>
+                                    <div className="city-input-wrapper">
+                                        <input 
+                                            type="text" 
+                                            id="city"
+                                            className={appliedHighlight ? 'highlight-flash' : ''}
+                                            value={city}
+                                            onFocus={() => setShowCityDropdown(true)}
+                                            onClick={() => setShowCityDropdown(true)}
+                                            onChange={(e) => {
+                                                setCity(e.target.value);
+                                                setShowCityDropdown(true);
+                                            }}
+                                            placeholder="Click here to select any Bihar District (e.g. Patna, Muzaffarpur, Gaya...)"
+                                            autoComplete="off"
+                                        />
+                                        {city && (
+                                            <button 
+                                                type="button" 
+                                                className="city-clear-btn"
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    setCity("");
+                                                    setShowCityDropdown(true);
+                                                }}
+                                                title="Clear field"
+                                            >
+                                                ✕
+                                            </button>
+                                        )}
+
+                                        {/* All 38 Bihar Cities Interactive Dropdown */}
+                                        <AnimatePresence>
+                                            {showCityDropdown && (
+                                                <motion.div 
+                                                    className="bihar-cities-dropdown"
+                                                    initial={{ opacity: 0, y: -10, scale: 0.98 }}
+                                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                                    exit={{ opacity: 0, y: -10, scale: 0.98 }}
+                                                    transition={{ duration: 0.2 }}
+                                                >
+                                                    <div className="bihar-cities-dropdown-header">
+                                                        <div className="header-left-tag">
+                                                            <span>📍</span>
+                                                            <strong>All 38 Bihar Districts & Major Commercial Hubs</strong>
+                                                        </div>
+                                                        <button 
+                                                            type="button" 
+                                                            className="close-dropdown-btn"
+                                                            onClick={() => setShowCityDropdown(false)}
+                                                            title="Close"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    </div>
+
+                                                    {/* Filter Tabs */}
+                                                    <div className="bihar-city-tabs">
+                                                        <button 
+                                                            type="button" 
+                                                            className={`bihar-tab-btn ${cityRegionFilter === 'all' ? 'active' : ''}`}
+                                                            onClick={() => setCityRegionFilter('all')}
+                                                        >
+                                                            All Districts ({ALL_BIHAR_CITIES.length})
+                                                        </button>
+                                                        <button 
+                                                            type="button" 
+                                                            className={`bihar-tab-btn ${cityRegionFilter === 'top' ? 'active' : ''}`}
+                                                            onClick={() => setCityRegionFilter('top')}
+                                                        >
+                                                            🔥 Top Hubs (15)
+                                                        </button>
+                                                        <button 
+                                                            type="button" 
+                                                            className={`bihar-tab-btn ${cityRegionFilter === 'north' ? 'active' : ''}`}
+                                                            onClick={() => setCityRegionFilter('north')}
+                                                        >
+                                                            🟢 North Bihar
+                                                        </button>
+                                                        <button 
+                                                            type="button" 
+                                                            className={`bihar-tab-btn ${cityRegionFilter === 'south' ? 'active' : ''}`}
+                                                            onClick={() => setCityRegionFilter('south')}
+                                                        >
+                                                            🔵 South Bihar
+                                                        </button>
+                                                    </div>
+
+                                                    {/* Cities Grid */}
+                                                    <div className="bihar-cities-grid">
+                                                        {filteredBiharCities.map(item => (
+                                                            <button
+                                                                key={item.name}
+                                                                type="button"
+                                                                className={`bihar-city-item ${city.toLowerCase() === item.name.toLowerCase() ? 'active' : ''}`}
+                                                                onClick={() => handleSelectBiharCity(item.name)}
+                                                            >
+                                                                <span className="item-pin">📍</span>
+                                                                <span className="item-name">{item.name}</span>
+                                                                <span className="item-tag">{item.badge}</span>
+                                                            </button>
+                                                        ))}
+                                                        {filteredBiharCities.length === 0 && (
+                                                            <div className="no-cities-found">
+                                                                No Bihar districts matching "{city}". You can still scrape with this custom location!
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </motion.div>
+                                            )}
+                                        </AnimatePresence>
+                                    </div>
+
+                                    {/* Quick Bihar City Selector Chips */}
+                                    {mode === 'bihar_directory' && (
+                                        <div className="city-chips-container">
+                                            {biharCities.map(c => (
+                                                <button
+                                                    key={c}
+                                                    type="button"
+                                                    className={`city-chip ${city.toLowerCase() === c.toLowerCase() ? 'active' : ''}`}
+                                                    onClick={() => handleSelectBiharCity(c)}
+                                                >
+                                                    <span>📍</span> {c}
+                                                </button>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Action Button */}
+                                {status !== 'running' && (
+                                    <motion.button 
+                                        id="scrape-btn" 
+                                        className="glow-button"
+                                        onClick={startScraping}
+                                        whileHover={{ scale: 1.02 }}
+                                        whileTap={{ scale: 0.98 }}
+                                    >
+                                        Start Scraping {limit} {
+                                            mode === 'bihar_directory' 
+                                                ? 'Bihar Local Directory' 
+                                                : (mode === 'coaching' 
+                                                    ? 'Website-Verified Coaching' 
+                                                    : (mode === 'indiamart' ? 'IndiaMART B2B' : 'Google Maps'))
+                                        } Leads
+                                    </motion.button>
+                                )}
+
+                                {/* Status Loading & Real-Time ETA Status Bar */}
+                                <AnimatePresence>
+                                    {status === 'running' && (
+                                        <motion.div 
+                                            id="status-container"
+                                            className="scrape-progress-panel"
+                                            initial={{ opacity: 0, y: 14 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, scale: 0.95 }}
+                                            transition={{ duration: 0.3 }}
+                                        >
+                                            {/* Top Header: Title & Counter */}
+                                            <div className="progress-header-row">
+                                                <div className="progress-title-wrap">
+                                                    <div className="live-radar-dot"></div>
+                                                    <div className="title-text-group">
+                                                        <h3 className="progress-main-title">
+                                                            {mode === 'bihar_directory' 
+                                                                ? 'Extracting Bihar Directory Leads' 
+                                                                : (mode === 'coaching' 
+                                                                    ? 'Verifying Coaching Institutes' 
+                                                                    : (mode === 'indiamart' ? 'Extracting IndiaMART B2B Suppliers' : 'Scraping Google Maps Leads'))}
+                                                        </h3>
+                                                        <span className="live-engine-tag">● Real-time Human Scraping Engine</span>
+                                                    </div>
+                                                </div>
+                                                <div className="progress-counter-badge">
+                                                    <span className="count-number">{scrapeProgress.count}</span>
+                                                    <span className="count-sep">/</span>
+                                                    <span className="total-number">{scrapeProgress.total}</span>
+                                                    <span className="leads-unit">Leads</span>
+                                                    <span className="percent-pill">{scrapeProgress.percent}%</span>
+                                                </div>
+                                            </div>
+
+                                            {/* Glowing Progress Bar Track */}
+                                            <div className="progress-bar-track-wrap">
+                                                <div className="progress-bar-track">
+                                                    <div 
+                                                        className="progress-bar-fill" 
+                                                        style={{ width: `${Math.max(scrapeProgress.percent, 3)}%` }}
+                                                    >
+                                                        <div className="progress-shimmer"></div>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* 3-Metric ETA Cards Grid */}
+                                            <div className="eta-metrics-grid">
+                                                {/* 1. Estimated Time Remaining (ETA) */}
+                                                <div className="metric-card eta-card highlight-metric">
+                                                    <div className="metric-icon-wrap">
+                                                        <span className="metric-icon">⏱️</span>
+                                                    </div>
+                                                    <div className="metric-info">
+                                                        <span className="metric-label">Estimated Time Remaining</span>
+                                                        <strong className="metric-value eta-value">
+                                                            {scrapeProgress.eta_text || "Estimating..."}
+                                                        </strong>
+                                                        <span className="metric-subtext">Dynamic ETA based on live pace</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* 2. Extraction Speed */}
+                                                <div className="metric-card speed-card">
+                                                    <div className="metric-icon-wrap">
+                                                        <span className="metric-icon">⚡</span>
+                                                    </div>
+                                                    <div className="metric-info">
+                                                        <span className="metric-label">Extraction Speed</span>
+                                                        <strong className="metric-value">
+                                                            {scrapeProgress.speed || "--"}
+                                                        </strong>
+                                                        <span className="metric-subtext">Verified leads processed</span>
+                                                    </div>
+                                                </div>
+
+                                                {/* 3. Elapsed Time */}
+                                                <div className="metric-card elapsed-card">
+                                                    <div className="metric-icon-wrap">
+                                                        <span className="metric-icon">⏳</span>
+                                                    </div>
+                                                    <div className="metric-info">
+                                                        <span className="metric-label">Elapsed Time</span>
+                                                        <strong className="metric-value">
+                                                            {scrapeProgress.elapsed_text || "0s"}
+                                                        </strong>
+                                                        <span className="metric-subtext">Time since started</span>
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* Live Activity Ticker */}
+                                            <div className="progress-ticker">
+                                                <div className="ticker-pulse-icon">
+                                                    <div className="ticker-spinner"></div>
+                                                </div>
+                                                <div className="ticker-text">
+                                                    {statusMessage || scrapeProgress.message || "Extracting listings..."}
+                                                </div>
+                                            </div>
+
+                                            {/* Anti-detection Reassurance Note */}
+                                            <div className="progress-protection-note">
+                                                <span>🛡️</span>
+                                                <span>Human-simulation active: Natural smooth scrolling & phone verification keeps scraping safe.</span>
+                                            </div>
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+
+                                {/* Result Output Container */}
+                                <AnimatePresence>
+                                    {(status === 'completed' || status === 'error') && (
+                                        <motion.div 
+                                            id="result-container"
+                                            initial={{ opacity: 0, y: 15 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: 15 }}
+                                        >
+                                            {status === 'completed' ? (
+                                                <div className="success-box">
+                                                    <div className="success-header-row">
+                                                        <span className="success-emoji">🎉</span>
+                                                        <div>
+                                                            <h3>Scraping Completed Successfully!</h3>
+                                                            <p className="success-summary-line">
+                                                                Extracted <strong>{scrapeProgress.count} verified leads</strong> in <strong>{scrapeProgress.elapsed_text}</strong>.
+                                                            </p>
+                                                        </div>
+                                                    </div>
+                                                    <p className="success-desc">{statusMessage}</p>
+                                                    <div className="completed-stats-row">
+                                                        <span className="stat-pill">⚡ Final Rate: {scrapeProgress.speed}</span>
+                                                        <span className="stat-pill">📁 Saved to project root CSV</span>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <div className="error-box">
+                                                    <h3>⚠️ Notice</h3>
+                                                    <p>{statusMessage}</p>
+                                                </div>
+                                            )}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
                             </div>
                         </div>
 
-                        {/* Coaching Quick Preset Chips */}
-                        <AnimatePresence>
-                            {mode === 'coaching' && (
-                                <motion.div 
-                                    className="coaching-chips"
-                                    initial={{ opacity: 0, height: 0 }}
-                                    animate={{ opacity: 1, height: 'auto' }}
-                                    exit={{ opacity: 0, height: 0 }}
-                                    transition={{ duration: 0.35 }}
-                                >
-                                    <label className="chips-title">Popular Coaching Niches (Click to Auto-fill)</label>
-                                    <div className="chips-container">
-                                        {coachingPresetsList.map((preset, idx) => (
-                                            <motion.button
-                                                key={preset}
-                                                type="button"
-                                                className={`preset-chip ${activeChip === preset ? 'active' : ''}`}
-                                                onClick={() => handleChipClick(preset)}
-                                                whileHover={{ scale: 1.04, y: -2 }}
-                                                whileTap={{ scale: 0.97 }}
-                                                initial={{ opacity: 0, y: 10 }}
-                                                animate={{ opacity: 1, y: 0 }}
-                                                transition={{ delay: idx * 0.03 }}
-                                            >
-                                                {preset}
-                                            </motion.button>
-                                        ))}
-                                    </div>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-
-                        {/* Inputs */}
-                        <div className="input-group">
-                            <label htmlFor="keyword">
-                                {mode === 'coaching' ? 'Coaching / Course Category' : 'Business Niche'}
-                            </label>
-                            <input 
-                                type="text" 
-                                id="keyword"
-                                value={keyword}
-                                onChange={(e) => {
-                                    setKeyword(e.target.value);
-                                    setActiveChip(null);
-                                }}
-                                placeholder={mode === 'coaching' ? 'e.g. IIT JEE Coaching, NEET Academy, Maths Tuition' : 'e.g. Restaurants, Plumbers, Dentists, Gyms'}
+                        {/* Right Column: AI Keyword & Market Recommender */}
+                        <div className="ai-recommender-column">
+                            <AIRecommender 
+                                onApply={handleApplyRecommendation} 
+                                onToast={handleToast}
+                                onOpenAiSettings={() => setShowAiModal(true)}
+                                aiConfig={aiConfig}
                             />
                         </div>
+                    </div>
 
-                        <div className="input-group">
-                            <label htmlFor="city">
-                                {mode === 'coaching' ? 'Target City / Education Hub' : 'Target City'}
-                            </label>
-                            <input 
-                                type="text" 
-                                id="city"
-                                value={city}
-                                onChange={(e) => setCity(e.target.value)}
-                                placeholder={mode === 'coaching' ? 'e.g. Kota, Patna, Delhi, Hyderabad, Bangalore' : 'e.g. Patna, New York, Mumbai, London'}
-                            />
-                        </div>
+                    {/* AI Settings Modal */}
+                    <AISettingsModal 
+                        isOpen={showAiModal} 
+                        onClose={() => setShowAiModal(false)} 
+                        aiConfig={aiConfig} 
+                        onConfigSaved={(newCfg) => setAiConfig(newCfg)} 
+                        onToast={handleToast} 
+                    />
 
-                        {/* Action Button */}
-                        {status !== 'running' && (
-                            <motion.button 
-                                id="scrape-btn" 
-                                className="glow-button"
-                                onClick={startScraping}
-                                whileHover={{ scale: 1.02 }}
-                                whileTap={{ scale: 0.98 }}
+                    {/* Notification Toast */}
+                    <AnimatePresence>
+                        {toastMessage && (
+                            <motion.div 
+                                className="ai-toast"
+                                initial={{ opacity: 0, y: 30, scale: 0.9 }}
+                                animate={{ opacity: 1, y: 0, scale: 1 }}
+                                exit={{ opacity: 0, y: 20, scale: 0.9 }}
                             >
-                                Start Scraping {limit} {mode === 'coaching' ? 'Coaching' : platformName} Leads
-                            </motion.button>
+                                <span style={{ fontSize: '1.2rem' }}>✨</span>
+                                <span>{toastMessage}</span>
+                            </motion.div>
                         )}
-
-                        {/* Status Loading Container */}
-                        <AnimatePresence>
-                            {status === 'running' && (
-                                <motion.div 
-                                    id="status-container"
-                                    initial={{ opacity: 0, scale: 0.95 }}
-                                    animate={{ opacity: 1, scale: 1 }}
-                                    exit={{ opacity: 0, scale: 0.95 }}
-                                >
-                                    <div className="spinner-wrap">
-                                        <div className="spinner"></div>
-                                    </div>
-                                    <h3 id="status-title">Scraping in Progress...</h3>
-                                    <p id="status-text">{statusMessage}</p>
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-
-                        {/* Result Output Container */}
-                        <AnimatePresence>
-                            {(status === 'completed' || status === 'error') && (
-                                <motion.div 
-                                    id="result-container"
-                                    initial={{ opacity: 0, y: 15 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    exit={{ opacity: 0, y: 15 }}
-                                >
-                                    {status === 'completed' ? (
-                                        <div className="success-box">
-                                            <h3>🎉 Scraping Completed!</h3>
-                                            <p>{statusMessage}</p>
-                                        </div>
-                                    ) : (
-                                        <div className="error-box">
-                                            <h3>⚠️ Notice</h3>
-                                            <p>{statusMessage}</p>
-                                        </div>
-                                    )}
-                                </motion.div>
-                            )}
-                        </AnimatePresence>
-                    </motion.div>
+                    </AnimatePresence>
 
                     {/* App Footer */}
                     <footer className="app-footer">

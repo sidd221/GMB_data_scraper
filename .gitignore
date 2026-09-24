@@ -1,7 +1,44 @@
+# Virtual environments
 .venv/
 venv/
+env/
+ENV/
+
+# Python cache & compiled bytecode
 __pycache__/
 *.py[cod]
-*.csv
+*$py.class
+*.so
+
+# Environment variables & API keys (CRITICAL: NEVER COMMIT TO GIT)
 .env
+.env.*
+*.env
+!.env.example
+ai_config.json
+
+# Scraped leads output files
+*.csv
+*.xlsx
+leads_*.csv
+
+# Cache files
+*cache*.json
+ai_daily_cache.json
+google_keywords_cache.json
+
+# Logs & temporary files
+*.log
+scratch/
+tmp/
+temp/
+downloaded_files/
+*.lock
+
+# OS and IDE specific
 .DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp
+*.swo
