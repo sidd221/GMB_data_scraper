@@ -33,6 +33,7 @@ scratch/
 tmp/
 temp/
 downloaded_files/
+.chrome_profile/
 *.lock
 
 # OS and IDE specific

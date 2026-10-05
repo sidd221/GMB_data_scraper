@@ -1,7 +1,9 @@
+import os
 import sys
 import time
 import re
 import random
+import unicodedata
 import pandas as pd
 import undetected_chromedriver as uc
 from bs4 import BeautifulSoup
@@ -17,6 +19,8 @@ try:
         sys.stderr.reconfigure(encoding='utf-8', errors='replace')
 except Exception:
     pass
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # Known commercial locality hubs for cities to expand multi-zone harvesting
 CITY_LOCALITY_HUBS = {
@@ -105,11 +109,13 @@ def get_chrome_major_version():
 def clean_phone_number(raw_str):
     """
     Format and clean phone numbers, handling Indian mobile/landline numbers
-    as well as general international formats.
+    as well as general international formats, normalizing non-breaking spaces.
     """
     if not raw_str:
         return ""
-    s = str(raw_str).strip()
+    
+    # Normalize unicode spaces (\u202f narrow space, \xa0 non-breaking space)
+    s = unicodedata.normalize('NFKD', str(raw_str)).strip()
     s = re.sub(r'^(?:phone|call|tel|mobile):\s*', '', s, flags=re.I).strip()
     
     digits = re.sub(r'[^\d]', '', s)
@@ -131,7 +137,7 @@ def clean_phone_number(raw_str):
         return f"{digits[:4]} {digits[4:]}"
     
     # General phone regex extraction if embedded in text
-    m = re.search(r'(?:\+?91[\s-]?)?(?:0?[6-9]\d{4}[\s\-]?\d{5}|0\d{2,4}[\s\-]?\d{6,8}|\b[6-9]\d{9}\b|\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})', s)
+    m = re.search(r'(?:\+?91[\s-]?)?(?:0?[6-9]\d{4}[\s\-]?\d{5}|0\d{1,4}[\s\-]?(?:\d{3,4}[\s\-]?\d{4}|\d{6,8})|\b[6-9]\d{9}\b|\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})', s)
     if m:
         cleaned_sub = m.group(0).strip()
         sub_digits = re.sub(r'[^\d]', '', cleaned_sub)
@@ -141,17 +147,21 @@ def clean_phone_number(raw_str):
     return s if len(digits) >= 7 else ""
 
 def extract_phone_from_text(text):
-    """Scan string for phone number pattern."""
+    """Scan string for phone number pattern with unicode normalization."""
     if not text:
         return ""
-    m = re.search(r'(?:\+?91[\s-]?)?(?:0?[6-9]\d{4}[\s\-]?\d{5}|0\d{2,4}[\s\-]?\d{6,8}|\b[6-9]\d{9}\b|\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})', text)
+    norm = unicodedata.normalize('NFKD', str(text))
+    # Replace any stubborn invisible spaces
+    norm = re.sub(r'[\xa0\u202f\u200b\u200e]', ' ', norm)
+    
+    m = re.search(r'(?:\+?91[\s-]?)?(?:0?[6-9]\d{4}[\s\-]?\d{5}|0\d{1,4}[\s\-]?(?:\d{3,4}[\s\-]?\d{4}|\d{6,8})|\b[6-9]\d{9}\b|\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})', norm)
     if m:
         return clean_phone_number(m.group(0))
     return ""
 
 def extract_phone_from_details(soup):
-    """Extract phone number from Google Maps place details page HTML."""
-    # 1. Copy phone number tooltip button
+    """Extract phone number from Google Maps place details HTML or panel."""
+    # 1. Tooltip button containing phone
     phone_btn = soup.find("button", {"data-tooltip": re.compile(r"phone", re.I)})
     if phone_btn:
         aria = phone_btn.get("aria-label", "").replace("Phone:", "").strip()
@@ -160,7 +170,7 @@ def extract_phone_from_details(soup):
         if phone:
             return phone
 
-    # 2. Button with data-item-id containing phone
+    # 2. Element with data-item-id containing phone
     phone_item = soup.find(lambda e: e.name in ["button", "div", "a"] and str(e.get("data-item-id", "")).startswith("phone:"))
     if phone_item:
         item_id = str(phone_item.get("data-item-id", "")).replace("phone:tel:", "").replace("phone:", "").strip()
@@ -187,278 +197,29 @@ def extract_phone_from_details(soup):
 
 def generate_search_queries(keyword, city):
     """
-    Generates comprehensive, intelligent synonym and locality query variations
-    for Google Maps for ANY business category, service, or locality, so that
-    EVERY search seamlessly breaks past Google's ~25-listing single-query wall
-    and reliably hits 100+ unique verified leads.
+    Generates structured queries prioritizing geographic zone dispersion.
+    By alternating locality hubs immediately after the primary search,
+    the scraper bypasses Google's single-query result cap (~120 listings)
+    and fetches distinct, non-overlapping leads across the entire city.
     """
     clean_kw = keyword.strip()
     clean_city = city.strip()
     kw_lower = clean_kw.lower()
     city_lower = clean_city.lower()
 
-    # Core phrase normalization (strip leading modifiers like "best", "top", "famous", "cheap", "good")
+    # Core phrase normalization
     core_kw = re.sub(r'^(?:best|top|famous|cheap|good|verified|popular)\s+', '', clean_kw, flags=re.I).strip()
     if not core_kw:
         core_kw = clean_kw
 
     queries = []
-    
+
     # 1. Primary User & Core Queries
     queries.append(f"{clean_kw} in {clean_city}")
     if core_kw.lower() != clean_kw.lower():
         queries.append(f"{core_kw} in {clean_city}")
 
-    # 2. Universal Foundational Variations (generated for EVERY search)
-    foundational = [
-        f"best {core_kw} in {clean_city}",
-        f"top {core_kw} in {clean_city}",
-        f"{core_kw} near {clean_city}",
-        f"{core_kw} services in {clean_city}",
-        f"{core_kw} center in {clean_city}",
-        f"{core_kw} agency in {clean_city}",
-        f"{core_kw} shop in {clean_city}",
-        f"famous {core_kw} in {clean_city}",
-        f"list of {core_kw} in {clean_city}"
-    ]
-    for f_q in foundational:
-        if f_q not in queries:
-            queries.append(f_q)
-
-    # 3. Domain-Specific Semantic Expansions
-    # Eye / Vision / Retina
-    if any(w in kw_lower for w in ["eye", "surgon", "surgeon", "retina", "vision", "netra", "ophthalm"]):
-        syns = [
-            f"eye hospital in {clean_city}",
-            f"eye care clinic in {clean_city}",
-            f"eye specialist doctor in {clean_city}",
-            f"ophthalmologist in {clean_city}",
-            f"netralaya in {clean_city}",
-            f"eye clinic in {clean_city}",
-            f"cataract surgeon in {clean_city}",
-            f"retina specialist in {clean_city}",
-            f"best eye doctors in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Dental / Teeth / Orthodontist
-    elif any(w in kw_lower for w in ["dentist", "dental", "teeth", "tooth", "orthodont"]):
-        syns = [
-            f"dental clinic in {clean_city}",
-            f"dentist in {clean_city}",
-            f"dental hospital in {clean_city}",
-            f"dental care center in {clean_city}",
-            f"orthodontist in {clean_city}",
-            f"teeth care clinic in {clean_city}",
-            f"root canal specialist in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Orthopedic / Bone / Joint
-    elif any(w in kw_lower for w in ["ortho", "bone", "joint", "knee", "spine"]):
-        syns = [
-            f"orthopedic doctor in {clean_city}",
-            f"orthopedic hospital in {clean_city}",
-            f"bone specialist in {clean_city}",
-            f"joint replacement clinic in {clean_city}",
-            f"fracture clinic in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Heart / Cardiac
-    elif any(w in kw_lower for w in ["cardio", "heart"]):
-        syns = [
-            f"cardiologist in {clean_city}",
-            f"heart hospital in {clean_city}",
-            f"cardiac center in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Neuro / Brain / Spine
-    elif any(w in kw_lower for w in ["neuro", "brain", "spine"]):
-        syns = [
-            f"neurologist in {clean_city}",
-            f"neuro hospital in {clean_city}",
-            f"spine surgeon in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Gynecology / Maternity / IVF
-    elif any(w in kw_lower for w in ["gyno", "gynec", "maternity", "women", "ivf", "pregnancy"]):
-        syns = [
-            f"gynecologist in {clean_city}",
-            f"maternity hospital in {clean_city}",
-            f"women care clinic in {clean_city}",
-            f"ivf fertility center in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Pediatrics / Child Specialist
-    elif any(w in kw_lower for w in ["pedia", "child", "baby", "infant"]):
-        syns = [
-            f"pediatrician in {clean_city}",
-            f"child specialist doctor in {clean_city}",
-            f"children hospital in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Dermatology / Skin / Hair
-    elif any(w in kw_lower for w in ["skin", "derma", "hair", "laser"]):
-        syns = [
-            f"dermatologist in {clean_city}",
-            f"skin clinic in {clean_city}",
-            f"hair transplant clinic in {clean_city}",
-            f"cosmetology center in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # General Medical / Doctor / Clinic / Hospital
-    elif any(w in kw_lower for w in ["doctor", "clinic", "hospital", "physician", "pathology", "diagnostic"]):
-        syns = [
-            f"private hospital in {clean_city}",
-            f"specialist clinic in {clean_city}",
-            f"multispeciality hospital in {clean_city}",
-            f"nursing home in {clean_city}",
-            f"diagnostic center in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Home Services: Plumbers, Electricians, Carpenters, AC repair
-    elif any(w in kw_lower for w in ["plumb", "electri", "carpent", "ac repair", "pest control", "painter"]):
-        syns = [
-            f"{core_kw} services in {clean_city}",
-            f"{core_kw} repair in {clean_city}",
-            f"emergency {core_kw} in {clean_city}",
-            f"professional {core_kw} in {clean_city}",
-            f"{core_kw} contractors in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Legal / Chartered Accountant / Tax
-    elif any(w in kw_lower for w in ["lawyer", "advocate", "legal", "ca", "chartered accountant", "tax"]):
-        syns = [
-            f"advocate in {clean_city}",
-            f"legal advisor in {clean_city}",
-            f"law firm in {clean_city}",
-            f"chartered accountants in {clean_city}",
-            f"tax consultant in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Salon / Spa / Beauty Parlour
-    elif any(w in kw_lower for w in ["salon", "parlour", "spa", "makeup", "bridal", "beauty"]):
-        syns = [
-            f"beauty parlour in {clean_city}",
-            f"hair salon in {clean_city}",
-            f"bridal makeup studio in {clean_city}",
-            f"luxury spa in {clean_city}",
-            f"unisex salon in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Coaching / Tuition / Classes / Institute / Academy
-    elif any(w in kw_lower for w in ["coach", "tuition", "class", "academy", "institute", "study"]):
-        syns = [
-            f"coaching institute in {clean_city}",
-            f"tuition classes in {clean_city}",
-            f"academy in {clean_city}",
-            f"educational institute in {clean_city}",
-            f"study center in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Restaurant / Food / Cafe / Hotel
-    elif any(w in kw_lower for w in ["restaur", "food", "cafe", "hotel", "dine", "dhaba", "bakery"]):
-        syns = [
-            f"family restaurant in {clean_city}",
-            f"top cafes in {clean_city}",
-            f"best food in {clean_city}",
-            f"hotels in {clean_city}",
-            f"veg restaurant in {clean_city}",
-            f"bakery in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Gym / Fitness / Yoga
-    elif any(w in kw_lower for w in ["gym", "fit", "workout", "yoga"]):
-        syns = [
-            f"fitness center in {clean_city}",
-            f"gym in {clean_city}",
-            f"health club in {clean_city}",
-            f"unisex gym in {clean_city}",
-            f"yoga classes in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Real Estate / Property
-    elif any(w in kw_lower for w in ["real estate", "property", "plot", "builder", "flat"]):
-        syns = [
-            f"property dealer in {clean_city}",
-            f"real estate agent in {clean_city}",
-            f"plots for sale in {clean_city}",
-            f"builders in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Automobile / Garage / Travel / Taxi
-    elif any(w in kw_lower for w in ["car", "auto", "vehicle", "taxi", "travel", "garage", "mechanic"]):
-        syns = [
-            f"car repair garage in {clean_city}",
-            f"auto mechanic in {clean_city}",
-            f"car rental in {clean_city}",
-            f"tour and travels in {clean_city}",
-            f"taxi service in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # Photography / Events / Catering
-    elif any(w in kw_lower for w in ["photo", "wedding", "event", "cater", "banquet"]):
-        syns = [
-            f"wedding photographer in {clean_city}",
-            f"photo studio in {clean_city}",
-            f"event management in {clean_city}",
-            f"banquet hall in {clean_city}",
-            f"caterers in {clean_city}"
-        ]
-        for s in syns:
-            if s not in queries:
-                queries.append(s)
-
-    # 4. Known Locality / Hub variations for this city
+    # 2. Known Locality / Hub variations for this city (High Yield - Top Priority)
     hubs = CITY_LOCALITY_HUBS.get(city_lower, [])
     if not hubs:
         for k, v in CITY_LOCALITY_HUBS.items():
@@ -471,104 +232,220 @@ def generate_search_queries(keyword, city):
         if hq not in queries:
             queries.append(hq)
 
-    # 5. Universal commercial areas present in virtually every town/city
-    generic_areas = ["Civil Lines", "Station Road", "Main Road", "Market", "Bypass Road", "AP Colony", "Rampur", "Town", "Commercial Area", "Chowk"]
-    for area in generic_areas:
-        gq = f"{core_kw} in {area}, {clean_city}"
-        if gq not in queries:
-            queries.append(gq)
+    # 3. Universal Directional & Commercial Sectors for ANY city worldwide
+    universal_sectors = [
+        f"{core_kw} in North {clean_city}",
+        f"{core_kw} in South {clean_city}",
+        f"{core_kw} in East {clean_city}",
+        f"{core_kw} in West {clean_city}",
+        f"{core_kw} in Central {clean_city}",
+        f"{core_kw} in {clean_city} Market",
+        f"{core_kw} in {clean_city} Station Road",
+        f"{core_kw} in {clean_city} Bypass Road",
+        f"{core_kw} in {clean_city} Civil Lines",
+        f"{core_kw} in {clean_city} Industrial Area",
+        f"{core_kw} in {clean_city} Ring Road",
+        f"{core_kw} in {clean_city} City Center",
+        f"{core_kw} in {clean_city} Main Road",
+        f"{core_kw} near {clean_city}"
+    ]
+    for uq in universal_sectors:
+        if uq not in queries:
+            queries.append(uq)
+
+    # 4. Domain-Specific Semantic Expansions
+    syns = []
+    if any(w in kw_lower for w in ["eye", "surgeon", "retina", "vision", "ophthalm"]):
+        syns = [f"eye hospital in {clean_city}", f"eye care clinic in {clean_city}", f"ophthalmologist in {clean_city}"]
+    elif any(w in kw_lower for w in ["dentist", "dental", "teeth", "tooth"]):
+        syns = [f"dental clinic in {clean_city}", f"dentist in {clean_city}", f"dental care center in {clean_city}"]
+    elif any(w in kw_lower for w in ["ortho", "bone", "joint", "spine"]):
+        syns = [f"orthopedic doctor in {clean_city}", f"bone specialist in {clean_city}"]
+    elif any(w in kw_lower for w in ["cardio", "heart"]):
+        syns = [f"cardiologist in {clean_city}", f"heart hospital in {clean_city}"]
+    elif any(w in kw_lower for w in ["skin", "derma", "hair", "laser"]):
+        syns = [f"dermatologist in {clean_city}", f"skin clinic in {clean_city}", f"hair clinic in {clean_city}"]
+    elif any(w in kw_lower for w in ["doctor", "clinic", "hospital", "pathology", "diagnostic"]):
+        syns = [f"diagnostic center in {clean_city}", f"pathology lab in {clean_city}", f"multispeciality hospital in {clean_city}"]
+    elif any(w in kw_lower for w in ["salon", "parlour", "spa", "makeup", "bridal", "beauty"]):
+        syns = [f"beauty parlour in {clean_city}", f"hair salon in {clean_city}", f"bridal makeup in {clean_city}", f"unisex salon in {clean_city}"]
+    elif any(w in kw_lower for w in ["coach", "tuition", "class", "academy", "institute"]):
+        syns = [f"coaching institute in {clean_city}", f"tuition classes in {clean_city}", f"academy in {clean_city}"]
+    elif any(w in kw_lower for w in ["restaur", "food", "cafe", "hotel", "dine"]):
+        syns = [f"family restaurant in {clean_city}", f"top cafes in {clean_city}", f"hotel in {clean_city}"]
+    elif any(w in kw_lower for w in ["gym", "fit", "workout", "yoga"]):
+        syns = [f"fitness center in {clean_city}", f"gym in {clean_city}", f"yoga classes in {clean_city}"]
+    elif any(w in kw_lower for w in ["real estate", "property", "plot", "builder"]):
+        syns = [f"property dealer in {clean_city}", f"real estate agent in {clean_city}"]
+
+    for s in syns:
+        if s not in queries:
+            queries.append(s)
+
+    # 5. Generic Quality Filters (last priority)
+    generic_extras = [
+        f"best {core_kw} in {clean_city}",
+        f"top {core_kw} in {clean_city}",
+        f"famous {core_kw} in {clean_city}"
+    ]
+    for g in generic_extras:
+        if g not in queries:
+            queries.append(g)
 
     return queries
 
-def get_user_input():
-    print("\n==============================")
-    print("GOOGLE MAPS BUSINESS SCRAPER (NAME & PHONE)")
-    print("==============================\n")
-    keyword = input("Enter Business Keyword (e.g., Restaurants): ").strip()
-    city = input("Enter City (e.g., Patna): ").strip()
-    leads_str = input("Enter Number of Leads to Scrape (default 100): ").strip()
-    try:
-        target_count = int(leads_str) if leads_str else 100
-    except ValueError:
-        target_count = 100
-    return keyword, city, target_count
-
-def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, stop_event=None, headless=False):
-    """
-    Scrapes Google Maps for a given keyword and city.
-    Uses multi-query expansion to comfortably reach 100+ unique leads per city.
-    Extracts:
-      - Business Name
-      - Phone Number
-    Returns list of dicts: [{"Business Name": ..., "Phone Number": ...}, ...]
-    """
-    clean_keyword = keyword.strip()
-    clean_city = city.strip()
-    target_count = max(1, int(target_count))
-    
-    queries = generate_search_queries(clean_keyword, clean_city)
-    
 def create_driver(headless=False):
-    """Initializes and returns an undetected Chrome driver instance."""
+    """
+    Initializes a resilient undetected Chrome instance equipped with stealth flags,
+    automation masking, and a persistent profile to prevent Google bot flags.
+    """
     options = uc.ChromeOptions()
     if headless:
         options.add_argument("--headless=new")
     else:
         options.add_argument("--start-maximized")
-    options.add_argument("--lang=en-US")
+
+    # Persistent user-data profile to preserve session cookies, consent, and trust
+    profile_dir = os.path.join(BASE_DIR, ".chrome_profile")
+    try:
+        os.makedirs(profile_dir, exist_ok=True)
+        options.add_argument(f"--user-data-dir={profile_dir}")
+    except Exception:
+        pass
+
+    # Stealth & Anti-Detection arguments
+    options.add_argument("--lang=en-US,en;q=0.9")
+    options.add_argument("--disable-blink-features=AutomationControlled")
+    options.add_argument("--disable-features=IsolateOrigins,site-per-process")
+    options.add_argument("--no-first-run")
+    options.add_argument("--no-service-autorun")
+    options.add_argument("--password-store=basic")
+    options.add_argument("--disable-notifications")
+    options.add_argument("--disable-popup-blocking")
+    options.add_argument("--disable-infobars")
+
+    # Suppress permission prompts
+    prefs = {
+        "profile.default_content_setting_values.notifications": 2,
+        "profile.default_content_setting_values.geolocation": 2,
+        "credentials_enable_service": False,
+        "profile.password_manager_enabled": False
+    }
+    options.add_experimental_option("prefs", prefs)
+
     major_version = get_chrome_major_version()
-    if major_version:
-        return uc.Chrome(options=options, version_main=major_version)
-    return uc.Chrome(options=options)
+    driver = None
+    try:
+        if major_version:
+            driver = uc.Chrome(options=options, version_main=major_version)
+        else:
+            driver = uc.Chrome(options=options)
+    except Exception as e:
+        # Fallback without persistent profile if locked by a parallel instance
+        safe_print(f"Warning: Primary profile launch failed ({e}), using clean isolated session...")
+        clean_opts = uc.ChromeOptions()
+        if headless:
+            clean_opts.add_argument("--headless=new")
+        else:
+            clean_opts.add_argument("--start-maximized")
+        clean_opts.add_argument("--lang=en-US,en;q=0.9")
+        clean_opts.add_argument("--disable-blink-features=AutomationControlled")
+        if major_version:
+            driver = uc.Chrome(options=clean_opts, version_main=major_version)
+        else:
+            driver = uc.Chrome(options=clean_opts)
+
+    # Inject CDP stealth scripts to hide webdriver indicators
+    try:
+        driver.execute_cdp_cmd("Page.addScriptToEvaluateOnNewDocument", {
+            "source": """
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+                window.navigator.chrome = {
+                    runtime: {},
+                    loadTimes: function() {},
+                    csi: function() {},
+                    app: {}
+                };
+                Object.defineProperty(navigator, 'plugins', { get: () => [1, 2, 3, 4, 5] });
+                Object.defineProperty(navigator, 'languages', { get: () => ['en-US', 'en'] });
+            """
+        })
+    except Exception:
+        pass
+
+    return driver
+
+def check_for_captcha_or_block(driver):
+    """Detect if Google is presenting a rate limit or CAPTCHA challenge."""
+    try:
+        src = driver.page_source.lower()
+        triggers = [
+            "unusual traffic from your computer network",
+            "recaptcha",
+            "sorry/index",
+            "our systems have detected unusual traffic",
+            "please show you're not a robot"
+        ]
+        return any(t in src for t in triggers)
+    except Exception:
+        return False
 
 def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, stop_event=None, headless=False):
     """
-    Scrapes Google Maps for a given keyword and city.
-    Uses multi-query expansion and human-like natural scrolling
-    to comfortably reach 100+ unique leads per city.
-    Extracts:
-      - Business Name
-      - Phone Number
-    Returns list of dicts: [{"Business Name": ..., "Phone Number": ...}, ...]
+    Extracts verified Google Maps business listings (Name & Phone).
+    Features:
+      - Geo-zone expansion to comfortably hit 100+ to 500+ unique leads
+      - Unicode phone normalization (fixes hidden non-breaking space issues)
+      - In-page side panel inspection (eliminates rate-limiting driver.get navigations)
+      - Adaptive infinite scrolling with anti-stall observer jiggling
+      - Auto-detection & pause recovery if Google prompts CAPTCHA
     """
     clean_keyword = keyword.strip()
     clean_city = city.strip()
     target_count = max(1, int(target_count))
-    
+
     queries = generate_search_queries(clean_keyword, clean_city)
-    
+
     safe_print(f"\n[Google Maps Scraper] Starting search for '{clean_keyword}' in '{clean_city}'")
     safe_print(f"Target Leads: {target_count}")
-    safe_print(f"Generated {len(queries)} query zones to ensure target of {target_count} leads is met.")
-    safe_print("Launching browser, please wait...")
+    safe_print(f"Prepared {len(queries)} geographic zone queries to harvest maximum unique leads.")
+    safe_print("Launching browser with anti-detection shielding, please wait...")
 
     driver = create_driver(headless)
     results = []
     seen_names = set()
     seen_phones = set()
-    feed_xpath = "//div[@role='feed']"
-    
+
+    def notify(lead=None, query_info=""):
+        if progress_callback:
+            try:
+                progress_callback(len(results), target_count, lead, query_info)
+            except TypeError:
+                try:
+                    progress_callback(len(results), target_count, lead)
+                except Exception:
+                    pass
+
     try:
         for q_idx, current_query in enumerate(queries, 1):
             if len(results) >= target_count:
                 safe_print(f"\nTarget goal of {target_count} leads successfully reached!")
                 break
             if stop_event and stop_event.is_set():
-                safe_print("\nStop requested by user. Finishing up...")
+                safe_print("\nStop requested by user. Finalizing results...")
                 break
 
             query_encoded = current_query.replace(" ", "+")
             url = f"https://www.google.com/maps/search/{query_encoded}"
-            safe_print(f"\n[{q_idx}/{len(queries)}] Searching: \"{current_query}\" (Progress: {len(results)}/{target_count} leads)")
+            safe_print(f"\n[{q_idx}/{len(queries)}] Query: \"{current_query}\" (Harvested: {len(results)}/{target_count} leads)")
 
             try:
                 driver.get(url)
-                time.sleep(4)
+                time.sleep(random.uniform(3.0, 4.5))
             except Exception as e:
                 safe_print(f"Error loading {current_query}: {e}")
-                # Auto-recovery if browser disconnected during long multi-query run
                 err_str = str(e).lower()
-                if "invalid session id" in err_str or "disconnected" in err_str or "session deleted" in err_str:
+                if "invalid session id" in err_str or "disconnected" in err_str:
                     try:
                         driver.quit()
                     except Exception:
@@ -576,37 +453,66 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
                     driver = create_driver(headless)
                     try:
                         driver.get(url)
-                        time.sleep(4)
+                        time.sleep(3.5)
                     except Exception:
                         continue
                 else:
                     continue
 
-            # Check if Google shows a consent banner on first page
-            if q_idx == 1:
-                try:
-                    consent_btns = driver.find_elements(By.XPATH, "//button[contains(., 'Accept all') or contains(., 'Agree')]")
-                    if consent_btns:
-                        consent_btns[0].click()
+            # Anti-Bot / CAPTCHA Guard: Check if verification is needed
+            if check_for_captcha_or_block(driver):
+                safe_print("\n[ALERT] Google verification / unusual traffic detected!")
+                safe_print("Please complete the verification in the opened Chrome window. Waiting up to 60s...")
+                for _ in range(30):
+                    if stop_event and stop_event.is_set():
+                        break
+                    time.sleep(2)
+                    if not check_for_captcha_or_block(driver):
+                        safe_print("Verification cleared! Resuming scraper...")
                         time.sleep(2)
+                        break
+
+            # Dismiss Google consent or cookie banners if shown
+            if q_idx <= 2:
+                try:
+                    consent_btns = driver.find_elements(By.XPATH, "//button[contains(., 'Accept all') or contains(., 'Agree') or contains(., 'I agree')]")
+                    if consent_btns and consent_btns[0].is_displayed():
+                        consent_btns[0].click()
+                        time.sleep(1.5)
                 except Exception:
                     pass
 
-            # Wait for results feed
+            # Detect dead-end queries early
+            src_check = driver.page_source.lower()
+            if "no results found for" in src_check or "make sure all words are spelled correctly" in src_check:
+                safe_print("   -> No listings found for this zone query. Advancing to next zone...")
+                continue
+
+            # Find the search results feed container
             feed_element = None
-            try:
-                feed_element = WebDriverWait(driver, 8).until(
-                    EC.presence_of_element_located((By.XPATH, feed_xpath))
-                )
-            except Exception:
-                # Check for single place match page
+            feed_selectors = [
+                "//div[@role='feed']",
+                "//div[contains(@class, 'm6QErb') and contains(@aria-label, 'Results')]",
+                "//div[contains(@class, 'm6QErb') and contains(@class, 'DxyBCb')]"
+            ]
+            for sel in feed_selectors:
+                try:
+                    elems = driver.find_elements(By.XPATH, sel)
+                    if elems and elems[0].is_displayed():
+                        feed_element = elems[0]
+                        break
+                except Exception:
+                    pass
+
+            # Check if Google redirected directly to a single exact business match
+            if not feed_element:
                 try:
                     soup_single = BeautifulSoup(driver.page_source, "html.parser")
                     h1 = soup_single.find("h1")
-                    if h1 and h1.get_text(strip=True).lower() != "results":
+                    if h1 and h1.get_text(strip=True).lower() not in ["results", "google maps"]:
                         s_name = h1.get_text(strip=True)
                         norm_s = re.sub(r'[^a-zA-Z0-9]', '', s_name.lower())
-                        if norm_s not in seen_names:
+                        if norm_s and norm_s not in seen_names:
                             s_phone = extract_phone_from_details(soup_single)
                             norm_p = re.sub(r'\D', '', s_phone) if s_phone else ""
                             if not norm_p or norm_p not in seen_phones:
@@ -615,22 +521,18 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
                                     seen_phones.add(norm_p)
                                 lead = {"Business Name": s_name, "Phone Number": s_phone or "Not available"}
                                 results.append(lead)
-                                safe_print(f"[{len(results)}/{target_count}] Found: {s_name} | Phone: {lead['Phone Number']}")
-                                if progress_callback:
-                                    try:
-                                        progress_callback(len(results), target_count, lead, current_query)
-                                    except TypeError:
-                                        progress_callback(len(results), target_count, lead)
+                                safe_print(f"[{len(results)}/{target_count}] Single Place Match: {s_name} | Phone: {lead['Phone Number']}")
+                                notify(lead, current_query)
                 except Exception:
                     pass
                 continue
 
-            # Scroll and stream extract leads from this query feed
+            # Infinite Scroll & In-Page Lead Extraction
             retries = 0
             last_card_count = 0
-            cards_needing_phone = []
+            cards_for_side_panel = []
 
-            for scroll_round in range(1, 30):
+            for scroll_round in range(1, 45):
                 if len(results) >= target_count:
                     break
                 if stop_event and stop_event.is_set():
@@ -640,17 +542,17 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
                     soup = BeautifulSoup(driver.page_source, "html.parser")
                 except Exception:
                     break
-                    
+
                 cards = soup.find_all("div", class_=lambda c: c and "Nv2PK" in c)
                 current_card_count = len(cards)
-                
+
                 if current_card_count > last_card_count:
                     last_card_count = current_card_count
                     retries = 0
                 else:
                     retries += 1
 
-                for card in cards:
+                for card_idx, card in enumerate(cards):
                     if len(results) >= target_count:
                         break
                     if stop_event and stop_event.is_set():
@@ -672,12 +574,19 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
                     if norm_name in seen_names:
                         continue
 
-                    # Extract Phone Number directly from card text snippet
+                    # 1. Primary Phone Extraction: From card text snippet (unicode normalized)
                     card_text = card.get_text(" | ", strip=True)
                     phone = extract_phone_from_text(card_text)
-                    
-                    a_link = card.find("a", href=re.compile(r"/maps/place/"))
-                    link = a_link.get("href") if a_link else ""
+
+                    # 2. Secondary Phone Extraction: From card quick-action buttons/links
+                    if not phone:
+                        tel_a = card.find("a", href=re.compile(r"^tel:", re.I))
+                        if tel_a:
+                            phone = clean_phone_number(tel_a.get("href", "").replace("tel:", ""))
+                    if not phone:
+                        call_btn = card.find(lambda e: e.name in ["button", "a"] and any("call" in str(v).lower() for v in [e.get("aria-label"), e.get("data-tooltip")]))
+                        if call_btn:
+                            phone = clean_phone_number(call_btn.get("aria-label") or call_btn.get("data-tooltip"))
 
                     if phone:
                         norm_phone = re.sub(r'\D', '', phone)
@@ -693,29 +602,23 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
                         }
                         results.append(lead)
                         safe_print(f"[{len(results)}/{target_count}] {name} | Phone: {phone}")
-                        if progress_callback:
-                            try:
-                                progress_callback(len(results), target_count, lead, current_query)
-                            except TypeError:
-                                progress_callback(len(results), target_count, lead)
+                        notify(lead, current_query)
                     else:
-                        # Queue for fallback details visit if needed
-                        if link and norm_name not in seen_names:
-                            cards_needing_phone.append({"name": name, "norm_name": norm_name, "link": link})
+                        # Queue index for in-page side panel click inspection if needed
+                        if norm_name not in seen_names:
+                            cards_for_side_panel.append((card_idx, name, norm_name))
 
-                if len(results) >= target_count or retries >= 6:
+                # Check completion or excessive retries
+                if len(results) >= target_count or retries >= 8:
                     break
 
-                # Human-like natural micro-scrolling
+                # Adaptive Scrolling Strategy
                 try:
-                    # 1. Variable micro-scroll steps with brief pauses
-                    steps = random.randint(3, 5)
-                    for _ in range(steps):
-                        step_px = random.randint(240, 420)
-                        driver.execute_script("arguments[0].scrollTop += arguments[1];", feed_element, step_px)
-                        time.sleep(random.uniform(0.18, 0.30))
+                    # 1. Scroll feed container downwards
+                    driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", feed_element)
+                    time.sleep(random.uniform(0.3, 0.5))
 
-                    # 2. Scroll the last rendered card into view to trigger lazy-load hydration
+                    # 2. Scroll the last visible card into view to trigger lazy loading
                     driver.execute_script("""
                         var cards = arguments[0].querySelectorAll('div.Nv2PK');
                         if (cards.length > 0) {
@@ -723,60 +626,77 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
                         }
                     """, feed_element)
 
-                    # 3. Anti-stall jiggle: If feed pauses rendering, scroll up slightly then down to wake up intersection observer
+                    # 3. Anti-stall observer jiggle: Wake up Google intersection observer if rendering paused
                     if retries >= 2:
-                        driver.execute_script("arguments[0].scrollTop -= 200;", feed_element)
-                        time.sleep(random.uniform(0.4, 0.7))
-                        driver.execute_script("arguments[0].scrollTop += 380;", feed_element)
-                        time.sleep(random.uniform(0.6, 1.0))
+                        driver.execute_script("arguments[0].scrollTop -= 240;", feed_element)
+                        time.sleep(random.uniform(0.3, 0.6))
+                        driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", feed_element)
 
-                    # 4. Settle pause for Google Maps network request and rendering
-                    time.sleep(random.uniform(1.3, 1.9))
+                    # Dynamic settle delay for network payload
+                    time.sleep(random.uniform(1.2, 1.8))
                 except Exception:
                     break
 
-                # Check if reached end of list for this query
+                # Check if reached Google Maps hard end of listings for this query
                 src_lower = driver.page_source.lower()
                 if "you've reached the end of the list" in src_lower or "end of results" in src_lower:
-                    safe_print("   -> Reached end of listings for this query.")
+                    safe_print("   -> Reached end of listings for this zone.")
                     break
 
-            # If still short of target, check place details for cards with unlisted phone numbers
-            if len(results) < target_count and cards_needing_phone and (not stop_event or not stop_event.is_set()):
-                for item in cards_needing_phone[:15]:
-                    if len(results) >= target_count:
+            # In-Page Side Panel Phone Check for remaining cards (NO driver.get reloads)
+            # This inspects the place details via in-page click without breaking the session
+            if len(results) < target_count and cards_for_side_panel and (not stop_event or not stop_event.is_set()):
+                safe_print(f"   -> Inspecting details for {min(12, len(cards_for_side_panel))} listings in current zone...")
+                try:
+                    webelements = driver.find_elements(By.CSS_SELECTOR, "div.Nv2PK")
+                except Exception:
+                    webelements = []
+
+                checked_count = 0
+                for c_idx, b_name, norm_name in cards_for_side_panel:
+                    if len(results) >= target_count or checked_count >= 12:
                         break
                     if stop_event and stop_event.is_set():
                         break
-                    if item["norm_name"] in seen_names:
+                    if norm_name in seen_names:
                         continue
 
-                    try:
-                        driver.get(item["link"])
-                        time.sleep(2.0)
-                        soup_detail = BeautifulSoup(driver.page_source, "html.parser")
-                        phone = extract_phone_from_details(soup_detail)
-                        
-                        seen_names.add(item["norm_name"])
-                        norm_phone = re.sub(r'\D', '', phone) if phone else ""
-                        if norm_phone:
-                            seen_phones.add(norm_phone)
+                    if c_idx < len(webelements):
+                        try:
+                            card_elem = webelements[c_idx]
+                            # Click card in-place using JavaScript
+                            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", card_elem)
+                            time.sleep(0.3)
+                            driver.execute_script("arguments[0].click();", card_elem)
+                            time.sleep(random.uniform(1.0, 1.5))
 
-                        lead = {
-                            "Business Name": item["name"],
-                            "Phone Number": phone if phone else "Not available"
-                        }
-                        results.append(lead)
-                        safe_print(f"[{len(results)}/{target_count}] {item['name']} | Phone: {lead['Phone Number']}")
-                        if progress_callback:
-                            try:
-                                progress_callback(len(results), target_count, lead, current_query)
-                            except TypeError:
-                                progress_callback(len(results), target_count, lead)
-                    except Exception as e:
-                        safe_print(f"Error checking {item['name']}: {e}")
+                            soup_panel = BeautifulSoup(driver.page_source, "html.parser")
+                            phone = extract_phone_from_details(soup_panel)
 
-        safe_print(f"\nScraping finished! Total extracted: {len(results)} unique leads.")
+                            seen_names.add(norm_name)
+                            norm_phone = re.sub(r'\D', '', phone) if phone else ""
+                            if norm_phone:
+                                seen_phones.add(norm_phone)
+
+                            lead = {
+                                "Business Name": b_name,
+                                "Phone Number": phone if phone else "Not available"
+                            }
+                            results.append(lead)
+                            checked_count += 1
+                            safe_print(f"[{len(results)}/{target_count}] {b_name} | Phone: {lead['Phone Number']}")
+                            notify(lead, current_query)
+
+                            # Close side panel or click back if back button present
+                            back_btns = driver.find_elements(By.XPATH, "//button[@aria-label='Back' or contains(@aria-label, 'Back to results')]")
+                            if back_btns and back_btns[0].is_displayed():
+                                back_btns[0].click()
+                                time.sleep(0.4)
+
+                        except Exception:
+                            continue
+
+        safe_print(f"\nScraping complete! Total extracted: {len(results)} unique leads.")
 
     except Exception as e:
         safe_print(f"\nAn error occurred during scraping: {e}")
@@ -794,7 +714,17 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
     return results
 
 def main():
-    keyword, city, target_count = get_user_input()
+    print("\n==============================")
+    print("GOOGLE MAPS BUSINESS SCRAPER (NAME & PHONE)")
+    print("==============================\n")
+    keyword = input("Enter Business Keyword (e.g., Restaurants): ").strip()
+    city = input("Enter City (e.g., Patna): ").strip()
+    leads_str = input("Enter Number of Leads to Scrape (default 100): ").strip()
+    try:
+        target_count = int(leads_str) if leads_str else 100
+    except ValueError:
+        target_count = 100
+
     if not keyword or not city:
         safe_print("Both Keyword and City are required!")
         return
