@@ -151,7 +151,8 @@ header p {
     color: #cbd5e1;
 }
 
-.input-group input {
+.input-group input,
+.input-group select {
     width: 100%;
     padding: 0.95rem 1.1rem;
     background: var(--surface);
@@ -162,7 +163,18 @@ header p {
     transition: all 0.25s ease;
 }
 
-.input-group input:focus {
+.input-group select {
+    cursor: pointer;
+}
+
+.input-group select option {
+    background: #0f172a;
+    color: #f8fafc;
+    padding: 0.6rem;
+}
+
+.input-group input:focus,
+.input-group select:focus {
     outline: none;
     border-color: var(--accent);
     box-shadow: 0 0 0 4px var(--accent-glow);

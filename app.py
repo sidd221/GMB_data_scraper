@@ -21,11 +21,12 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 # Active scrape jobs storage
 jobs = {}
 
-def background_scraper(job_id, keyword, city, target_count=100):
+def background_scraper(job_id, keyword, city, target_count=100, source="all"):
     stop_event = threading.Event()
     jobs[job_id]["stop_event"] = stop_event
     jobs[job_id]["status"] = "running"
-    jobs[job_id]["message"] = f"Initializing Chrome and searching Google Maps for '{keyword}' in '{city}'..."
+    src_label = "Multi-Engine (Google + Bing Maps)" if source == "all" else ("Bing Maps" if source == "bing" else "Google Maps")
+    jobs[job_id]["message"] = f"Initializing Chrome for {src_label} searching '{keyword}' in '{city}'..."
     jobs[job_id]["count"] = 0
     jobs[job_id]["total"] = target_count
     jobs[job_id]["percent"] = 0
@@ -42,10 +43,11 @@ def background_scraper(job_id, keyword, city, target_count=100):
             jobs[job_id]["leads"].append(latest_lead)
 
     try:
-        leads = data_scrap.scrape_google_maps(
+        leads = data_scrap.scrape_leads(
             keyword=keyword,
             city=city,
             target_count=target_count,
+            source=source,
             progress_callback=on_progress,
             stop_event=stop_event,
             headless=False
@@ -53,7 +55,8 @@ def background_scraper(job_id, keyword, city, target_count=100):
 
         clean_kw = re.sub(r'[^a-zA-Z0-9]', '_', keyword.strip()).lower()
         clean_ct = re.sub(r'[^a-zA-Z0-9]', '_', city.strip()).lower()
-        output_filename = f"leads_{clean_kw}_{clean_ct}.csv"
+        prefix = "leads" if source == "all" else f"leads_{source}"
+        output_filename = f"{prefix}_{clean_kw}_{clean_ct}.csv"
         file_path = os.path.join(BASE_DIR, output_filename)
 
         if leads:
@@ -86,6 +89,10 @@ def start_scrape():
     data = request.get_json(force=True) or {}
     keyword = data.get("keyword", "").strip()
     city = data.get("city", "").strip()
+    source = data.get("source", "all").strip().lower()
+    if source not in ["all", "google", "bing"]:
+        source = "all"
+
     try:
         target_count = int(data.get("target_count", 100))
         target_count = max(1, min(500, target_count))
@@ -100,6 +107,7 @@ def start_scrape():
         "status": "pending",
         "keyword": keyword,
         "city": city,
+        "source": source,
         "target_count": target_count,
         "count": 0,
         "leads": [],
@@ -107,8 +115,10 @@ def start_scrape():
         "message": "Queued scraper..."
     }
 
-    t = threading.Thread(target=background_scraper, args=(job_id, keyword, city, target_count), daemon=True)
+    t = threading.Thread(target=background_scraper, args=(job_id, keyword, city, target_count, source), daemon=True)
     t.start()
+
+    return jsonify({"job_id": job_id})
 
     return jsonify({"job_id": job_id})
 

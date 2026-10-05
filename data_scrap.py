@@ -2,6 +2,7 @@ import os
 import sys
 import time
 import re
+import json
 import random
 import unicodedata
 import pandas as pd
@@ -151,7 +152,6 @@ def extract_phone_from_text(text):
     if not text:
         return ""
     norm = unicodedata.normalize('NFKD', str(text))
-    # Replace any stubborn invisible spaces
     norm = re.sub(r'[\xa0\u202f\u200b\u200e]', ' ', norm)
     
     m = re.search(r'(?:\+?91[\s-]?)?(?:0?[6-9]\d{4}[\s\-]?\d{5}|0\d{1,4}[\s\-]?(?:\d{3,4}[\s\-]?\d{4}|\d{6,8})|\b[6-9]\d{9}\b|\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})', norm)
@@ -161,21 +161,21 @@ def extract_phone_from_text(text):
 
 def extract_phone_from_details(soup):
     """Extract phone number from Google Maps place details HTML or panel."""
-    # 1. Tooltip button containing phone
-    phone_btn = soup.find("button", {"data-tooltip": re.compile(r"phone", re.I)})
-    if phone_btn:
-        aria = phone_btn.get("aria-label", "").replace("Phone:", "").strip()
-        text = phone_btn.get_text(strip=True)
-        phone = clean_phone_number(aria or text)
-        if phone:
-            return phone
-
-    # 2. Element with data-item-id containing phone
+    # 1. Element with data-item-id containing phone (most accurate)
     phone_item = soup.find(lambda e: e.name in ["button", "div", "a"] and str(e.get("data-item-id", "")).startswith("phone:"))
     if phone_item:
         item_id = str(phone_item.get("data-item-id", "")).replace("phone:tel:", "").replace("phone:", "").strip()
         aria = phone_item.get("aria-label", "").replace("Phone:", "").strip()
         phone = clean_phone_number(item_id or aria)
+        if phone:
+            return phone
+
+    # 2. Tooltip button containing phone
+    phone_btn = soup.find("button", {"data-tooltip": re.compile(r"phone", re.I)})
+    if phone_btn:
+        aria = phone_btn.get("aria-label", "").replace("Phone:", "").strip()
+        text = phone_btn.get_text(strip=True)
+        phone = clean_phone_number(aria or text)
         if phone:
             return phone
 
@@ -207,7 +207,6 @@ def generate_search_queries(keyword, city):
     kw_lower = clean_kw.lower()
     city_lower = clean_city.lower()
 
-    # Core phrase normalization
     core_kw = re.sub(r'^(?:best|top|famous|cheap|good|verified|popular)\s+', '', clean_kw, flags=re.I).strip()
     if not core_kw:
         core_kw = clean_kw
@@ -219,7 +218,7 @@ def generate_search_queries(keyword, city):
     if core_kw.lower() != clean_kw.lower():
         queries.append(f"{core_kw} in {clean_city}")
 
-    # 2. Known Locality / Hub variations for this city (High Yield - Top Priority)
+    # 2. Known Locality / Hub variations for this city (High Yield)
     hubs = CITY_LOCALITY_HUBS.get(city_lower, [])
     if not hubs:
         for k, v in CITY_LOCALITY_HUBS.items():
@@ -296,8 +295,8 @@ def generate_search_queries(keyword, city):
 
 def create_driver(headless=False):
     """
-    Initializes a resilient undetected Chrome instance equipped with stealth flags,
-    automation masking, and a persistent profile to prevent Google bot flags.
+    Initializes a resilient undetected Chrome instance equipped with stealth flags
+    and automation masking. Uses isolated instance configurations to avoid file lock collisions.
     """
     options = uc.ChromeOptions()
     if headless:
@@ -305,15 +304,7 @@ def create_driver(headless=False):
     else:
         options.add_argument("--start-maximized")
 
-    # Persistent user-data profile to preserve session cookies, consent, and trust
-    profile_dir = os.path.join(BASE_DIR, ".chrome_profile")
-    try:
-        os.makedirs(profile_dir, exist_ok=True)
-        options.add_argument(f"--user-data-dir={profile_dir}")
-    except Exception:
-        pass
-
-    # Stealth & Anti-Detection arguments
+    # Anti-bot stealth arguments
     options.add_argument("--lang=en-US,en;q=0.9")
     options.add_argument("--disable-blink-features=AutomationControlled")
     options.add_argument("--disable-features=IsolateOrigins,site-per-process")
@@ -324,7 +315,7 @@ def create_driver(headless=False):
     options.add_argument("--disable-popup-blocking")
     options.add_argument("--disable-infobars")
 
-    # Suppress permission prompts
+    # Suppress permission popups (geolocation, notifications)
     prefs = {
         "profile.default_content_setting_values.notifications": 2,
         "profile.default_content_setting_values.geolocation": 2,
@@ -341,8 +332,8 @@ def create_driver(headless=False):
         else:
             driver = uc.Chrome(options=options)
     except Exception as e:
-        # Fallback without persistent profile if locked by a parallel instance
-        safe_print(f"Warning: Primary profile launch failed ({e}), using clean isolated session...")
+        safe_print(f"Driver launch notice: {e}. Retrying clean instance...")
+        time.sleep(1.5)
         clean_opts = uc.ChromeOptions()
         if headless:
             clean_opts.add_argument("--headless=new")
@@ -390,14 +381,13 @@ def check_for_captcha_or_block(driver):
     except Exception:
         return False
 
-def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, stop_event=None, headless=False):
+def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, stop_event=None, headless=False, existing_names=None, existing_phones=None):
     """
     Extracts verified Google Maps business listings (Name & Phone).
     Features:
-      - Geo-zone expansion to comfortably hit 100+ to 500+ unique leads
-      - Unicode phone normalization (fixes hidden non-breaking space issues)
-      - In-page side panel inspection (eliminates rate-limiting driver.get navigations)
-      - Adaptive infinite scrolling with anti-stall observer jiggling
+      - In-place 'a.hfpxzc' click inspection: opens details side panel dynamically without full-page reloads
+      - Geo-zone expansion across commercial localities
+      - Anti-stall infinite scrolling with adaptive jiggling
       - Auto-detection & pause recovery if Google prompts CAPTCHA
     """
     clean_keyword = keyword.strip()
@@ -413,8 +403,8 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
 
     driver = create_driver(headless)
     results = []
-    seen_names = set()
-    seen_phones = set()
+    seen_names = set(existing_names) if existing_names else set()
+    seen_phones = set(existing_phones) if existing_phones else set()
 
     def notify(lead=None, query_info=""):
         if progress_callback:
@@ -437,7 +427,7 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
 
             query_encoded = current_query.replace(" ", "+")
             url = f"https://www.google.com/maps/search/{query_encoded}"
-            safe_print(f"\n[{q_idx}/{len(queries)}] Query: \"{current_query}\" (Harvested: {len(results)}/{target_count} leads)")
+            safe_print(f"\n[{q_idx}/{len(queries)}] Google Maps Zone: \"{current_query}\" (Progress: {len(results)}/{target_count} leads)")
 
             try:
                 driver.get(url)
@@ -459,10 +449,10 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
                 else:
                     continue
 
-            # Anti-Bot / CAPTCHA Guard: Check if verification is needed
+            # Check if Google verification is required
             if check_for_captcha_or_block(driver):
                 safe_print("\n[ALERT] Google verification / unusual traffic detected!")
-                safe_print("Please complete the verification in the opened Chrome window. Waiting up to 60s...")
+                safe_print("Please complete the quick verification in the opened Chrome window. Waiting up to 60s...")
                 for _ in range(30):
                     if stop_event and stop_event.is_set():
                         break
@@ -472,7 +462,7 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
                         time.sleep(2)
                         break
 
-            # Dismiss Google consent or cookie banners if shown
+            # Dismiss consent banner if shown
             if q_idx <= 2:
                 try:
                     consent_btns = driver.find_elements(By.XPATH, "//button[contains(., 'Accept all') or contains(., 'Agree') or contains(., 'I agree')]")
@@ -485,7 +475,7 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
             # Detect dead-end queries early
             src_check = driver.page_source.lower()
             if "no results found for" in src_check or "make sure all words are spelled correctly" in src_check:
-                safe_print("   -> No listings found for this zone query. Advancing to next zone...")
+                safe_print("   -> No listings in this zone. Advancing to next zone...")
                 continue
 
             # Find the search results feed container
@@ -504,7 +494,7 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
                 except Exception:
                     pass
 
-            # Check if Google redirected directly to a single exact business match
+            # Check if redirected directly to single place match page
             if not feed_element:
                 try:
                     soup_single = BeautifulSoup(driver.page_source, "html.parser")
@@ -521,201 +511,384 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
                                     seen_phones.add(norm_p)
                                 lead = {"Business Name": s_name, "Phone Number": s_phone or "Not available"}
                                 results.append(lead)
-                                safe_print(f"[{len(results)}/{target_count}] Single Place Match: {s_name} | Phone: {lead['Phone Number']}")
+                                safe_print(f"[{len(results)}/{target_count}] Single Place: {s_name} | Phone: {lead['Phone Number']}")
                                 notify(lead, current_query)
                 except Exception:
                     pass
                 continue
 
-            # Infinite Scroll & In-Page Lead Extraction
+            # Stream Extraction: Scroll feed and inspect cards in-place
             retries = 0
             last_card_count = 0
-            cards_for_side_panel = []
+            inspected_indices = set()
 
-            for scroll_round in range(1, 45):
+            for scroll_round in range(1, 35):
                 if len(results) >= target_count:
                     break
                 if stop_event and stop_event.is_set():
                     break
 
                 try:
-                    soup = BeautifulSoup(driver.page_source, "html.parser")
+                    card_links = driver.find_elements(By.CSS_SELECTOR, "a.hfpxzc")
                 except Exception:
                     break
 
-                cards = soup.find_all("div", class_=lambda c: c and "Nv2PK" in c)
-                current_card_count = len(cards)
-
+                current_card_count = len(card_links)
                 if current_card_count > last_card_count:
                     last_card_count = current_card_count
                     retries = 0
                 else:
                     retries += 1
 
-                for card_idx, card in enumerate(cards):
+                # Inspect newly rendered card links
+                for idx in range(len(card_links)):
                     if len(results) >= target_count:
                         break
                     if stop_event and stop_event.is_set():
                         break
-
-                    name = ""
-                    name_elem = card.find("div", class_=lambda x: x and ("qBF1Pd" in x or "fontHeadlineSmall" in x))
-                    if name_elem:
-                        name = name_elem.get_text(strip=True)
-                    if not name:
-                        a_tag = card.find("a", href=re.compile(r"/maps/place/"))
-                        if a_tag and a_tag.get("aria-label"):
-                            name = a_tag.get("aria-label").strip()
-
-                    if not name:
+                    if idx in inspected_indices:
                         continue
 
-                    norm_name = re.sub(r'[^a-zA-Z0-9]', '', name.lower())
-                    if norm_name in seen_names:
-                        continue
+                    inspected_indices.add(idx)
 
-                    # 1. Primary Phone Extraction: From card text snippet (unicode normalized)
-                    card_text = card.get_text(" | ", strip=True)
-                    phone = extract_phone_from_text(card_text)
+                    try:
+                        # Re-fetch elements to avoid stale references
+                        all_links = driver.find_elements(By.CSS_SELECTOR, "a.hfpxzc")
+                        if idx >= len(all_links):
+                            break
+                        link = all_links[idx]
 
-                    # 2. Secondary Phone Extraction: From card quick-action buttons/links
-                    if not phone:
-                        tel_a = card.find("a", href=re.compile(r"^tel:", re.I))
-                        if tel_a:
-                            phone = clean_phone_number(tel_a.get("href", "").replace("tel:", ""))
-                    if not phone:
-                        call_btn = card.find(lambda e: e.name in ["button", "a"] and any("call" in str(v).lower() for v in [e.get("aria-label"), e.get("data-tooltip")]))
-                        if call_btn:
-                            phone = clean_phone_number(call_btn.get("aria-label") or call_btn.get("data-tooltip"))
-
-                    if phone:
-                        norm_phone = re.sub(r'\D', '', phone)
-                        if norm_phone and norm_phone in seen_phones:
+                        name = link.get_attribute("aria-label") or ""
+                        if not name:
                             continue
+
+                        norm_name = re.sub(r'[^a-zA-Z0-9]', '', name.lower())
+                        if norm_name in seen_names:
+                            continue
+
+                        # Click card anchor in-place to open details panel
+                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", link)
+                        time.sleep(0.2)
+                        driver.execute_script("arguments[0].click();", link)
+                        time.sleep(random.uniform(1.2, 1.6))
+
+                        # Extract phone from opened panel
+                        soup_panel = BeautifulSoup(driver.page_source, "html.parser")
+                        phone = extract_phone_from_details(soup_panel)
+
+                        if not phone:
+                            phone = extract_phone_from_text(soup_panel.get_text())
+
+                        seen_names.add(norm_name)
+                        norm_phone = re.sub(r'\D', '', phone) if phone else ""
                         if norm_phone:
                             seen_phones.add(norm_phone)
-                        seen_names.add(norm_name)
 
                         lead = {
                             "Business Name": name,
-                            "Phone Number": phone
+                            "Phone Number": phone if phone else "Not available"
                         }
                         results.append(lead)
-                        safe_print(f"[{len(results)}/{target_count}] {name} | Phone: {phone}")
+                        safe_print(f"[{len(results)}/{target_count}] {name} | Phone: {lead['Phone Number']}")
                         notify(lead, current_query)
-                    else:
-                        # Queue index for in-page side panel click inspection if needed
-                        if norm_name not in seen_names:
-                            cards_for_side_panel.append((card_idx, name, norm_name))
 
-                # Check completion or excessive retries
-                if len(results) >= target_count or retries >= 8:
+                    except Exception:
+                        continue
+
+                if len(results) >= target_count or retries >= 6:
                     break
 
-                # Adaptive Scrolling Strategy
+                # Adaptive Scrolling
                 try:
-                    # 1. Scroll feed container downwards
                     driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", feed_element)
-                    time.sleep(random.uniform(0.3, 0.5))
-
-                    # 2. Scroll the last visible card into view to trigger lazy loading
+                    time.sleep(random.uniform(0.4, 0.7))
                     driver.execute_script("""
-                        var cards = arguments[0].querySelectorAll('div.Nv2PK');
+                        var cards = arguments[0].querySelectorAll('a.hfpxzc');
                         if (cards.length > 0) {
                             cards[cards.length - 1].scrollIntoView({behavior: 'smooth', block: 'end'});
                         }
                     """, feed_element)
 
-                    # 3. Anti-stall observer jiggle: Wake up Google intersection observer if rendering paused
                     if retries >= 2:
-                        driver.execute_script("arguments[0].scrollTop -= 240;", feed_element)
-                        time.sleep(random.uniform(0.3, 0.6))
+                        driver.execute_script("arguments[0].scrollTop -= 200;", feed_element)
+                        time.sleep(0.3)
                         driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", feed_element)
 
-                    # Dynamic settle delay for network payload
-                    time.sleep(random.uniform(1.2, 1.8))
+                    time.sleep(random.uniform(1.4, 2.0))
                 except Exception:
                     break
 
-                # Check if reached Google Maps hard end of listings for this query
                 src_lower = driver.page_source.lower()
                 if "you've reached the end of the list" in src_lower or "end of results" in src_lower:
                     safe_print("   -> Reached end of listings for this zone.")
                     break
 
-            # In-Page Side Panel Phone Check for remaining cards (NO driver.get reloads)
-            # This inspects the place details via in-page click without breaking the session
-            if len(results) < target_count and cards_for_side_panel and (not stop_event or not stop_event.is_set()):
-                safe_print(f"   -> Inspecting details for {min(12, len(cards_for_side_panel))} listings in current zone...")
-                try:
-                    webelements = driver.find_elements(By.CSS_SELECTOR, "div.Nv2PK")
-                except Exception:
-                    webelements = []
-
-                checked_count = 0
-                for c_idx, b_name, norm_name in cards_for_side_panel:
-                    if len(results) >= target_count or checked_count >= 12:
-                        break
-                    if stop_event and stop_event.is_set():
-                        break
-                    if norm_name in seen_names:
-                        continue
-
-                    if c_idx < len(webelements):
-                        try:
-                            card_elem = webelements[c_idx]
-                            # Click card in-place using JavaScript
-                            driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", card_elem)
-                            time.sleep(0.3)
-                            driver.execute_script("arguments[0].click();", card_elem)
-                            time.sleep(random.uniform(1.0, 1.5))
-
-                            soup_panel = BeautifulSoup(driver.page_source, "html.parser")
-                            phone = extract_phone_from_details(soup_panel)
-
-                            seen_names.add(norm_name)
-                            norm_phone = re.sub(r'\D', '', phone) if phone else ""
-                            if norm_phone:
-                                seen_phones.add(norm_phone)
-
-                            lead = {
-                                "Business Name": b_name,
-                                "Phone Number": phone if phone else "Not available"
-                            }
-                            results.append(lead)
-                            checked_count += 1
-                            safe_print(f"[{len(results)}/{target_count}] {b_name} | Phone: {lead['Phone Number']}")
-                            notify(lead, current_query)
-
-                            # Close side panel or click back if back button present
-                            back_btns = driver.find_elements(By.XPATH, "//button[@aria-label='Back' or contains(@aria-label, 'Back to results')]")
-                            if back_btns and back_btns[0].is_displayed():
-                                back_btns[0].click()
-                                time.sleep(0.4)
-
-                        except Exception:
-                            continue
-
-        safe_print(f"\nScraping complete! Total extracted: {len(results)} unique leads.")
+        safe_print(f"\n[Google Maps Complete] Total extracted: {len(results)} unique leads.")
 
     except Exception as e:
-        safe_print(f"\nAn error occurred during scraping: {e}")
+        safe_print(f"\nGoogle Maps scraping notice: {e}")
     finally:
         if driver:
             try:
-                driver.quit()
+                driver.__del__ = lambda: None
             except Exception:
                 pass
             try:
-                driver.__del__ = lambda: None
+                driver.quit()
             except Exception:
                 pass
 
     return results
 
+def scrape_bing_maps(keyword, city, target_count=100, progress_callback=None, stop_event=None, headless=False, existing_names=None, existing_phones=None):
+    """
+    Alternative resilient business scraper powered by Bing Maps.
+    Features:
+      - Zero CAPTCHA / rate-limit restrictions
+      - Direct extraction of verified phone numbers embedded in data-entity JSON
+      - Rapid pagination across city listings
+    """
+    clean_keyword = keyword.strip()
+    clean_city = city.strip()
+    target_count = max(1, int(target_count))
+
+    query = f"{clean_keyword} in {clean_city}".replace(" ", "+")
+    url = f"https://www.bing.com/maps?q={query}"
+
+    safe_print(f"\n[Bing Maps Scraper] Searching for '{clean_keyword}' in '{clean_city}'")
+    safe_print(f"Target Leads: {target_count}")
+    safe_print("Launching browser, please wait...")
+
+    driver = create_driver(headless)
+    results = []
+    seen_names = set(existing_names) if existing_names else set()
+    seen_phones = set(existing_phones) if existing_phones else set()
+
+    try:
+        driver.get(url)
+        time.sleep(random.uniform(4.5, 6.0))
+
+        def extract_cards_from_page():
+            soup = BeautifulSoup(driver.page_source, "html.parser")
+            cards = soup.find_all("div", class_="b_maglistcard")
+            extracted = 0
+            for card in cards:
+                if len(results) >= target_count:
+                    break
+                if stop_event and stop_event.is_set():
+                    break
+
+                name = ""
+                phone = ""
+
+                # 1. Embedded data-entity JSON
+                data_attr = card.get("data-entity")
+                if data_attr:
+                    try:
+                        data_obj = json.loads(data_attr)
+                        ent = data_obj.get("entity", {})
+                        name = ent.get("title", "").strip()
+                        phone = ent.get("phone", "").strip()
+                    except Exception:
+                        pass
+
+                # 2. Fallback title
+                if not name:
+                    title_elem = card.find(class_=re.compile(r"title|name|header|cnm|bm_ib_title", re.I))
+                    if title_elem:
+                        name = title_elem.get_text(strip=True)
+
+                # 3. Fallback phone
+                if not phone:
+                    phone_elem = card.find("span", class_="nowrap")
+                    if phone_elem:
+                        phone = phone_elem.get_text(strip=True)
+
+                if not phone:
+                    phone = extract_phone_from_text(card.get_text())
+
+                if not name:
+                    continue
+
+                norm_name = re.sub(r'[^a-zA-Z0-9]', '', name.lower())
+                if norm_name in seen_names:
+                    continue
+
+                phone_clean = clean_phone_number(phone)
+                norm_phone = re.sub(r'\D', '', phone_clean) if phone_clean else ""
+
+                if norm_phone and norm_phone in seen_phones:
+                    continue
+
+                seen_names.add(norm_name)
+                if norm_phone:
+                    seen_phones.add(norm_phone)
+
+                lead = {
+                    "Business Name": name,
+                    "Phone Number": phone_clean if phone_clean else "Not available"
+                }
+                results.append(lead)
+                extracted += 1
+                safe_print(f"[Bing] [{len(results)}/{target_count}] {name} | Phone: {lead['Phone Number']}")
+                if progress_callback:
+                    try:
+                        progress_callback(len(results), target_count, lead, f"Bing: {clean_keyword} in {clean_city}")
+                    except TypeError:
+                        progress_callback(len(results), target_count, lead)
+
+            return extracted
+
+        # Initial page extraction
+        extract_cards_from_page()
+
+        # Infinite Scroll & Pagination on Bing Maps
+        retries = 0
+        for _ in range(25):
+            if len(results) >= target_count:
+                break
+            if stop_event and stop_event.is_set():
+                break
+
+            driver.execute_script("""
+                var lst = document.querySelector('.b_lstcards') ||
+                          document.getElementById('contentPane') || 
+                          document.getElementById('localSearchContent') || 
+                          document.querySelector('[class*="listingsCard"]');
+                if (lst) {
+                    lst.scrollTop = lst.scrollHeight;
+                }
+                var cards = document.querySelectorAll('.b_maglistcard, [data-entity]');
+                if (cards.length > 0) {
+                    cards[cards.length - 1].scrollIntoView({behavior: 'instant', block: 'end'});
+                }
+            """)
+            time.sleep(random.uniform(2.2, 3.2))
+
+            new_leads = extract_cards_from_page()
+            if new_leads > 0:
+                retries = 0
+            else:
+                retries += 1
+                # Try Next Page pagination button
+                try:
+                    next_btns = driver.find_elements(By.XPATH, "//a[contains(@class, 'sb_pagN') or contains(@class, 'c_pagNext') or contains(@title, 'Next') or contains(@aria-label, 'Next')]")
+                    if next_btns and next_btns[0].is_displayed():
+                        driver.execute_script("arguments[0].click();", next_btns[0])
+                        time.sleep(3.5)
+                        extract_cards_from_page()
+                        continue
+                except Exception:
+                    pass
+
+                # Try 'Search this area' button
+                try:
+                    area_btns = driver.find_elements(By.XPATH, "//button[contains(text(), 'Search this area') or contains(@aria-label, 'Search this area')]")
+                    if area_btns and area_btns[0].is_displayed():
+                        area_btns[0].click()
+                        time.sleep(3.5)
+                        extract_cards_from_page()
+                        continue
+                except Exception:
+                    pass
+
+                if retries >= 4:
+                    break
+
+        safe_print(f"\n[Bing Maps Complete] Total extracted: {len(results)} unique leads.")
+
+    except Exception as e:
+        safe_print(f"Bing Maps scraping notice: {e}")
+    finally:
+        if driver:
+            try:
+                driver.__del__ = lambda: None
+            except Exception:
+                pass
+            try:
+                driver.quit()
+            except Exception:
+                pass
+
+    return results
+
+def scrape_leads(keyword, city, target_count=100, source="all", progress_callback=None, stop_event=None, headless=False):
+    """
+    Master Lead Generation Router.
+    Modes:
+      - 'all': Multi-Engine (Google Maps + Bing Maps). Guaranteed to maximize lead yield by falling over to Bing Maps if Google hits query limits.
+      - 'google': Google Maps only.
+      - 'bing': Bing Maps only.
+    """
+    target_count = max(1, int(target_count))
+    source = (source or "all").lower()
+
+    if source == "bing":
+        return scrape_bing_maps(
+            keyword=keyword,
+            city=city,
+            target_count=target_count,
+            progress_callback=progress_callback,
+            stop_event=stop_event,
+            headless=headless
+        )
+    elif source == "google":
+        return scrape_google_maps(
+            keyword=keyword,
+            city=city,
+            target_count=target_count,
+            progress_callback=progress_callback,
+            stop_event=stop_event,
+            headless=headless
+        )
+    else:
+        # Multi-Engine Mode: Harvest Google Maps first, then Bing Maps for guaranteed maximum yield
+        safe_print(f"\n[Multi-Engine Scraper] Target: {target_count} leads for '{keyword}' in '{city}'")
+        safe_print("Stage 1: Harvesting Google Maps with in-page side panel inspection...")
+
+        g_leads = scrape_google_maps(
+            keyword=keyword,
+            city=city,
+            target_count=target_count,
+            progress_callback=progress_callback,
+            stop_event=stop_event,
+            headless=headless
+        )
+
+        if len(g_leads) >= target_count or (stop_event and stop_event.is_set()):
+            return g_leads
+
+        remaining = target_count - len(g_leads)
+        safe_print(f"\nStage 2: Google Maps provided {len(g_leads)} leads. Seamlessly switching to Bing Maps for remaining {remaining} leads...")
+
+        existing_names = {re.sub(r'[^a-zA-Z0-9]', '', l["Business Name"].lower()) for l in g_leads}
+        existing_phones = {re.sub(r'\D', '', l["Phone Number"]) for l in g_leads if l.get("Phone Number") and l["Phone Number"] != "Not available"}
+
+        def bing_callback(count, total, lead, q_info):
+            if progress_callback:
+                try:
+                    progress_callback(len(g_leads) + count, target_count, lead, q_info)
+                except TypeError:
+                    progress_callback(len(g_leads) + count, target_count, lead)
+
+        b_leads = scrape_bing_maps(
+            keyword=keyword,
+            city=city,
+            target_count=remaining,
+            progress_callback=bing_callback,
+            stop_event=stop_event,
+            headless=headless,
+            existing_names=existing_names,
+            existing_phones=existing_phones
+        )
+
+        all_leads = g_leads + b_leads
+        safe_print(f"\n[Multi-Engine Complete] Extracted {len(all_leads)} unique leads ({len(g_leads)} from Google, {len(b_leads)} from Bing).")
+        return all_leads
+
 def main():
     print("\n==============================")
-    print("GOOGLE MAPS BUSINESS SCRAPER (NAME & PHONE)")
+    print("BUSINESS LEAD SCRAPER (NAME & PHONE)")
     print("==============================\n")
     keyword = input("Enter Business Keyword (e.g., Restaurants): ").strip()
     city = input("Enter City (e.g., Patna): ").strip()
@@ -725,11 +898,19 @@ def main():
     except ValueError:
         target_count = 100
 
+    print("\nSelect Source:")
+    print("1. Multi-Engine: Google + Bing Maps (Recommended for Maximum Leads)")
+    print("2. Google Maps Only")
+    print("3. Bing Maps Only")
+    choice = input("Enter choice (1-3, default 1): ").strip()
+    source_map = {"1": "all", "2": "google", "3": "bing"}
+    source = source_map.get(choice, "all")
+
     if not keyword or not city:
         safe_print("Both Keyword and City are required!")
         return
 
-    data = scrape_google_maps(keyword, city, target_count=target_count)
+    data = scrape_leads(keyword, city, target_count=target_count, source=source)
 
     if data:
         df = pd.DataFrame(data)

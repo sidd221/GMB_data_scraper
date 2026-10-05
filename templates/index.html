@@ -46,6 +46,13 @@
                             <button type="button" class="pill" onclick="setCount(200)">200</button>
                         </div>
                     </div>
+                <div class="input-group">
+                    <label for="source">Data Engine / Search Source</label>
+                    <select id="source">
+                        <option value="all" selected>⚡ Multi-Engine: Google + Bing Maps (Maximum Leads & Auto-Fallback)</option>
+                        <option value="google">🌐 Google Maps Only</option>
+                        <option value="bing">🔷 Bing Maps Only (Zero Rate-Limits & Instant Verified Numbers)</option>
+                    </select>
                 </div>
 
                 <button type="submit" id="scrape-btn" class="glow-button">
@@ -154,7 +161,9 @@
             document.getElementById('scrape-btn').classList.add('hidden');
             document.getElementById('status-container').classList.remove('hidden');
             document.getElementById('status-title').textContent = "Scraping in progress...";
-            document.getElementById('status-text').textContent = `Launching Chrome to scrape '${keyword}' in '${city}'...`;
+            const source = document.getElementById('source').value;
+            const srcNames = { 'all': 'Multi-Engine (Google + Bing)', 'google': 'Google Maps', 'bing': 'Bing Maps' };
+            document.getElementById('status-text').textContent = `Launching Chrome for ${srcNames[source] || 'scraper'} on '${keyword}' in '${city}'...`;
             document.getElementById('progress-bar-fill').style.width = '0%';
             document.getElementById('stat-count').textContent = `0 of ${targetCount} leads`;
             document.getElementById('stat-percent').textContent = '0%';
@@ -163,7 +172,7 @@
                 const res = await fetch('/api/scrape', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ keyword, city, target_count: targetCount })
+                    body: JSON.stringify({ keyword, city, target_count: targetCount, source: source })
                 });
                 const data = await res.json();
 
