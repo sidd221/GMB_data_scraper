@@ -21,6 +21,28 @@
         </header>
 
         <div class="card glassmorphism">
+            <!-- Google Authentication & Session Status -->
+            <div class="auth-card" id="auth-card">
+                <div class="auth-left">
+                    <div class="auth-badge-icon" id="auth-status-icon">🔄</div>
+                    <div class="auth-texts">
+                        <div class="auth-title-row">
+                            <span class="auth-title" id="auth-title">Checking Google Account...</span>
+                            <span class="auth-tag" id="auth-tag">Checking</span>
+                        </div>
+                        <p class="auth-desc" id="auth-desc">Signing in removes the "Sign in to get more" restriction on Google Maps.</p>
+                    </div>
+                </div>
+                <div class="auth-right">
+                    <button type="button" id="auth-action-btn" class="secondary-btn mini-btn" onclick="openLoginBrowser()">
+                        🔑 Sign in to Google
+                    </button>
+                    <button type="button" class="secondary-btn icon-btn" title="Refresh Account Status" onclick="checkAuthStatus(true)">
+                        🔄
+                    </button>
+                </div>
+            </div>
+
             <!-- Search Form -->
             <form id="scrape-form" onsubmit="return false;">
                 <div class="input-grid">
@@ -215,8 +237,10 @@
                         for (let i = displayedCount; i < data.leads.length; i++) {
                             const lead = data.leads[i];
                             const tr = document.createElement('tr');
-                            const phoneDisplay = lead["Phone Number"] && lead["Phone Number"] !== "Not available" 
-                                ? `<a href="tel:${lead['Phone Number']}" class="phone-link">📞 ${escapeHtml(lead['Phone Number'])}</a>`
+                            const phone = (lead["Phone Number"] || lead["phone"] || lead["Phone"] || "").trim();
+                            const hasPhone = phone && phone !== "Not available" && phone !== "N/A";
+                            const phoneDisplay = hasPhone 
+                                ? `<a href="tel:${escapeHtml(phone.replace(/\s+/g, ''))}" class="phone-link">📞 ${escapeHtml(phone)}</a>`
                                 : `<span class="muted-text">N/A</span>`;
 
                             tr.innerHTML = `
@@ -263,6 +287,30 @@
             resultBox.classList.remove('hidden');
 
             if (isSuccess) {
+                // Re-sync final deduplicated leads into table
+                if (leads && leads.length > 0) {
+                    const tbody = document.getElementById('leads-tbody');
+                    tbody.innerHTML = '';
+                    leads.forEach((lead, i) => {
+                        const tr = document.createElement('tr');
+                        const phone = (lead["Phone Number"] || lead["phone"] || lead["Phone"] || "").trim();
+                        const hasPhone = phone && phone !== "Not available" && phone !== "N/A";
+                        const phoneDisplay = hasPhone 
+                            ? `<a href="tel:${escapeHtml(phone.replace(/\s+/g, ''))}" class="phone-link">📞 ${escapeHtml(phone)}</a>`
+                            : `<span class="muted-text">N/A</span>`;
+
+                        tr.innerHTML = `
+                            <td>${i + 1}</td>
+                            <td class="lead-name">${escapeHtml(lead["Business Name"] || "Unnamed")}</td>
+                            <td>${phoneDisplay}</td>
+                        `;
+                        tbody.appendChild(tr);
+                    });
+                    displayedCount = leads.length;
+                    document.getElementById('table-lead-count').textContent = displayedCount;
+                    document.getElementById('table-container').classList.remove('hidden');
+                }
+
                 resultBox.innerHTML = `
                     <div class="success-box">
                         <h3>🎉 Extraction Completed</h3>
@@ -313,6 +361,71 @@
             };
             return String(text || '').replace(/[&<>"']/g, m => map[m]);
         }
+
+        async function checkAuthStatus(manual = false) {
+            try {
+                const res = await fetch('/api/auth/status');
+                const data = await res.json();
+
+                const title = document.getElementById('auth-title');
+                const tag = document.getElementById('auth-tag');
+                const desc = document.getElementById('auth-desc');
+                const icon = document.getElementById('auth-status-icon');
+                const btn = document.getElementById('auth-action-btn');
+
+                if (data.logged_in) {
+                    icon.textContent = '🟢';
+                    tag.textContent = 'Active';
+                    tag.className = 'auth-tag tag-success';
+                    title.textContent = data.email ? `Signed In: ${data.email}` : 'Google Account Active';
+                    desc.textContent = data.details || 'Scraper will run with this signed-in account for maximum leads.';
+                    btn.textContent = 'Manage / Switch Account';
+                } else {
+                    icon.textContent = '🟡';
+                    tag.textContent = 'Not Signed In';
+                    tag.className = 'auth-tag tag-warning';
+                    title.textContent = 'Google Account Not Signed In';
+                    desc.textContent = 'Sign in once to bypass the "Sign in to get more" restriction on Google Maps.';
+                    btn.textContent = '🔑 Sign In to Google';
+                }
+
+                if (manual) {
+                    alert(data.logged_in ? `Google session active:\n${data.email || 'Verified'}` : 'Not signed in yet.\n\nClick "Sign In to Google" to open the browser and sign in once.');
+                }
+            } catch (err) {
+                console.warn('Auth status check error:', err);
+            }
+        }
+
+        async function openLoginBrowser() {
+            const btn = document.getElementById('auth-action-btn');
+            const orig = btn.textContent;
+            btn.textContent = 'Opening Chrome...';
+            btn.disabled = true;
+
+            try {
+                const res = await fetch('/api/auth/open_login', { method: 'POST' });
+                const data = await res.json();
+                btn.textContent = orig;
+                btn.disabled = false;
+
+                if (data.status === 'opened') {
+                    alert('Google Chrome has opened!\n\n1. Sign in to your Google account in that window.\n2. Once done, come back here and click the 🔄 refresh button.\n\nYour session is saved permanently in your scraper profile!');
+                    setTimeout(() => checkAuthStatus(false), 5000);
+                    setTimeout(() => checkAuthStatus(false), 15000);
+                } else {
+                    alert('Could not open Chrome: ' + (data.error || 'Unknown error'));
+                }
+            } catch (err) {
+                btn.textContent = orig;
+                btn.disabled = false;
+                alert('Error opening login browser: ' + err.message);
+            }
+        }
+
+        document.addEventListener('DOMContentLoaded', () => {
+            checkAuthStatus(false);
+        });
     </script>
 </body>
 </html>

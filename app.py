@@ -26,7 +26,9 @@ def background_scraper(job_id, keyword, city, target_count=100, source="all"):
     jobs[job_id]["stop_event"] = stop_event
     jobs[job_id]["status"] = "running"
     src_label = "Multi-Engine (Google + Bing Maps)" if source == "all" else ("Bing Maps" if source == "bing" else "Google Maps")
-    jobs[job_id]["message"] = f"Initializing Chrome for {src_label} searching '{keyword}' in '{city}'..."
+    auth = data_scrap.check_auth_status()
+    auth_tag = f" [Account: {auth['email']}]" if auth.get("logged_in") and auth.get("email") else " [Persistent Profile]"
+    jobs[job_id]["message"] = f"Initializing Chrome{auth_tag} for {src_label} searching '{keyword}' in '{city}'..."
     jobs[job_id]["count"] = 0
     jobs[job_id]["total"] = target_count
     jobs[job_id]["percent"] = 0
@@ -60,12 +62,13 @@ def background_scraper(job_id, keyword, city, target_count=100, source="all"):
         file_path = os.path.join(BASE_DIR, output_filename)
 
         if leads:
+            leads = data_scrap.deduplicate_leads(leads)
             df = pd.DataFrame(leads)
             df.to_csv(file_path, index=False, encoding="utf-8-sig")
 
             was_stopped = stop_event.is_set()
             status_text = "stopped" if was_stopped else "completed"
-            msg = f"Saved {len(leads)} leads to {output_filename}!" if not was_stopped else f"Stopped: Saved {len(leads)} leads collected so far."
+            msg = f"Saved {len(leads)} unique leads to {output_filename}!" if not was_stopped else f"Stopped: Saved {len(leads)} leads collected so far."
 
             jobs[job_id]["status"] = status_text
             jobs[job_id]["message"] = msg
@@ -120,7 +123,26 @@ def start_scrape():
 
     return jsonify({"job_id": job_id})
 
-    return jsonify({"job_id": job_id})
+@app.route("/api/auth/status")
+def auth_status():
+    status = data_scrap.check_auth_status()
+    return jsonify(status)
+
+@app.route("/api/auth/open_login", methods=["POST"])
+def open_login():
+    try:
+        data_scrap.open_google_login_browser()
+        return jsonify({
+            "status": "opened",
+            "message": "Google Chrome opened! Sign in to your Google account in that window, then click 'Refresh Status'."
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route("/api/auth/close_login", methods=["POST"])
+def close_login():
+    data_scrap.cleanup_lingering_scraper_chrome()
+    return jsonify({"status": "closed"})
 
 @app.route("/api/status/<job_id>")
 def get_status(job_id):

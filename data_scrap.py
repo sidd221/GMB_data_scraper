@@ -9,6 +9,7 @@ import pandas as pd
 import undetected_chromedriver as uc
 from bs4 import BeautifulSoup
 from selenium.webdriver.common.by import By
+from selenium.webdriver.common.action_chains import ActionChains
 from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 
@@ -105,22 +106,207 @@ def get_chrome_major_version():
                 return int(match.group(1))
     except Exception:
         pass
-    return None
+def human_delay(min_sec=1.5, max_sec=3.0):
+    """Randomized human delay with natural jitter."""
+    time.sleep(random.uniform(min_sec, max_sec))
+
+def human_click(driver, element):
+    """
+    Simulates organic human clicking behavior:
+    1. Smoothly scrolls the element into view.
+    2. Moves the mouse to the element with realistic coordinate jitter.
+    3. Triggers genuine hardware mouse events with natural micro-pauses.
+    """
+    try:
+        driver.execute_script("arguments[0].scrollIntoView({behavior: 'smooth', block: 'center'});", element)
+        time.sleep(random.uniform(0.18, 0.35))
+
+        # Randomize click offset slightly off-center (simulating human inaccuracy)
+        x_offset = random.randint(-6, 6)
+        y_offset = random.randint(-4, 4)
+
+        actions = ActionChains(driver)
+        actions.move_to_element_with_offset(element, x_offset, y_offset)
+        actions.pause(random.uniform(0.08, 0.20))
+        actions.click()
+        actions.perform()
+    except Exception:
+        # Fallback: Dispatch full synthetic mouse lifecycle with randomized coordinates
+        try:
+            driver.execute_script("""
+                var el = arguments[0];
+                var rect = el.getBoundingClientRect();
+                var cx = rect.left + rect.width / 2 + (Math.random() * 8 - 4);
+                var cy = rect.top + rect.height / 2 + (Math.random() * 6 - 3);
+
+                ['mousemove', 'mouseenter', 'mouseover', 'mousedown', 'mouseup', 'click'].forEach(function(eventType) {
+                    var evt = new MouseEvent(eventType, {
+                        bubbles: true,
+                        cancelable: true,
+                        view: window,
+                        clientX: cx,
+                        clientY: cy
+                    });
+                    el.dispatchEvent(evt);
+                });
+            """, element)
+        except Exception:
+            try:
+                driver.execute_script("arguments[0].click();", element)
+            except Exception:
+                pass
+
+def human_smooth_scroll(driver, feed_element, total_distance=None, direction="down"):
+    """
+    Simulates human mouse wheel scrolling in incremental, variable ticks
+    instead of instant robotic jumps.
+    """
+    if total_distance is None:
+        total_distance = random.randint(450, 850)
+
+    steps = random.randint(3, 5)
+    remaining = total_distance
+
+    for step in range(steps):
+        chunk = int(remaining / (steps - step)) + random.randint(-25, 25)
+        chunk = max(70, chunk)
+        if direction == "up":
+            chunk = -chunk
+
+        try:
+            driver.execute_script("""
+                var el = arguments[0];
+                var delta = arguments[1];
+                el.scrollBy({ top: delta, behavior: 'smooth' });
+
+                var wheelEvt = new WheelEvent('wheel', {
+                    bubbles: true,
+                    cancelable: true,
+                    view: window,
+                    deltaY: delta,
+                    deltaMode: 0
+                });
+                el.dispatchEvent(wheelEvt);
+            """, feed_element, chunk)
+        except Exception:
+            pass
+
+        remaining -= abs(chunk)
+        time.sleep(random.uniform(0.18, 0.35))
+
+    time.sleep(random.uniform(0.6, 1.2))
+
+def human_reading_pause(card_count):
+    """
+    Simulates natural human dwell time while viewing a listing.
+    Every 5-8 listings, simulates a deeper reading pause (inspecting reviews/photos).
+    """
+    if card_count > 0 and card_count % random.randint(5, 8) == 0:
+        pause = random.uniform(3.5, 5.5)
+        safe_print(f"   [Pacing] Human dwell pause ({pause:.1f}s) simulating review reading...")
+        time.sleep(pause)
+    else:
+        time.sleep(random.uniform(1.6, 2.8))
+
+def human_subtle_jitter(driver):
+    """Occasionally moves mouse slightly across viewport to maintain organic activity signals."""
+    if random.random() < 0.4:
+        try:
+            driver.execute_script("""
+                var x = Math.floor(Math.random() * (window.innerWidth - 100) + 50);
+                var y = Math.floor(Math.random() * (window.innerHeight - 100) + 50);
+                var evt = new MouseEvent('mousemove', {
+                    bubbles: true,
+                    cancelable: true,
+                    clientX: x,
+                    clientY: y
+                });
+                document.dispatchEvent(evt);
+            """)
+        except Exception:
+            pass
+
+def normalize_for_dedup(name):
+    """
+    Normalizes a business name for deduplication, stripping SEO spam keywords,
+    leading articles, parenthetical additions, and special characters.
+    """
+    if not name:
+        return ""
+    s = str(name).lower().strip()
+    s = re.sub(r'^(?:the|hotel|a|an)\s+', '', s, flags=re.I)
+    s = re.sub(r'\s*[\-|–|—|\|]\s*(?:best|top|famous|cheap|popular|weddingz|fully ac|marriage|banquet|hotel|resort|premier|luxury|verified).*$', '', s, flags=re.I)
+    s = re.sub(r'\s*\([^)]*\)', '', s)
+    s = re.sub(r',\s*[a-zA-Z\s]+$', '', s)
+    s = re.sub(r'[^a-z0-9]', '', s)
+    return s
+
+def deduplicate_leads(leads):
+    """
+    Final deduplication filter to guarantee zero duplicate business names
+    and zero duplicate phone numbers in the final leads dataset.
+    """
+    if not leads:
+        return []
+
+    unique_leads = []
+    seen_names = set()
+    seen_phones = set()
+
+    for lead in leads:
+        name = str(lead.get("Business Name", "")).strip()
+        phone = str(lead.get("Phone Number", "")).strip()
+        if not name:
+            continue
+
+        norm_name = normalize_for_dedup(name)
+        if not norm_name or norm_name in seen_names:
+            continue
+
+        norm_phone = re.sub(r'\D', '', phone) if (phone and phone != "Not available") else ""
+        if norm_phone and norm_phone in seen_phones:
+            # Repeated phone: preserve the unique business, but avoid assigning duplicate contact
+            lead_copy = dict(lead)
+            lead_copy["Phone Number"] = "Not available"
+            unique_leads.append(lead_copy)
+            seen_names.add(norm_name)
+            continue
+
+        seen_names.add(norm_name)
+        if norm_phone:
+            seen_phones.add(norm_phone)
+        unique_leads.append(lead)
+
+    return unique_leads
 
 def clean_phone_number(raw_str):
     """
-    Format and clean phone numbers, handling Indian mobile/landline numbers
-    as well as general international formats, normalizing non-breaking spaces.
+    Strictly validates, formats, and cleans phone numbers.
+    Rejects coordinates, rating IDs, decimals, or invalid prefixes.
     """
     if not raw_str:
         return ""
-    
-    # Normalize unicode spaces (\u202f narrow space, \xa0 non-breaking space)
+
+    # Normalize unicode spaces
     s = unicodedata.normalize('NFKD', str(raw_str)).strip()
-    s = re.sub(r'^(?:phone|call|tel|mobile):\s*', '', s, flags=re.I).strip()
-    
+
+    # Reject coordinates or floating point garbage (e.g. 543214.2380)
+    if '.' in s and re.search(r'\d+\.\d{2,}', s):
+        return ""
+
+    # Strip repeated prefixes like "phone:", "tel:", "mobile:", "call:"
+    while True:
+        new_s = re.sub(r'^(?:phone|call|tel|mobile):\s*', '', s, flags=re.I).strip()
+        if new_s == s:
+            break
+        s = new_s
+
     digits = re.sub(r'[^\d]', '', s)
-    
+
+    # Must be valid length for phone numbers
+    if len(digits) < 7 or len(digits) > 15:
+        return ""
+
     # 1. Indian 12 digits with 91 country code (e.g. 919835012345)
     if len(digits) == 12 and digits.startswith("91") and digits[2] in "6789":
         return f"+91 {digits[2:7]} {digits[7:]}"
@@ -136,54 +322,60 @@ def clean_phone_number(raw_str):
     # 5. Landline 10 digits (e.g. 0112345678)
     if len(digits) == 10 and digits.startswith("0"):
         return f"{digits[:4]} {digits[4:]}"
-    
-    # General phone regex extraction if embedded in text
-    m = re.search(r'(?:\+?91[\s-]?)?(?:0?[6-9]\d{4}[\s\-]?\d{5}|0\d{1,4}[\s\-]?(?:\d{3,4}[\s\-]?\d{4}|\d{6,8})|\b[6-9]\d{9}\b|\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})', s)
+
+    # Generic valid international format (starting with +)
+    if s.startswith("+") and len(digits) >= 10:
+        return s
+
+    # Regex extraction fallback only if strictly matching valid mobile/landline patterns
+    m = re.search(r'(?:\+?91[\s-]?)?(?:0?[6-9]\d{4}[\s\-]?\d{5}|0\d{1,4}[\s\-]?(?:\d{3,4}[\s\-]?\d{4}|\d{6,8})|\b[6-9]\d{9}\b)', s)
     if m:
         cleaned_sub = m.group(0).strip()
         sub_digits = re.sub(r'[^\d]', '', cleaned_sub)
-        if len(sub_digits) >= 10:
-            return cleaned_sub
+        if len(sub_digits) == 10 and sub_digits[0] in "6789":
+            return f"{sub_digits[:5]} {sub_digits[5:]}"
+        elif len(sub_digits) == 11 and sub_digits.startswith("0"):
+            return f"0{sub_digits[1:6]} {sub_digits[6:]}"
+        elif len(sub_digits) == 12 and sub_digits.startswith("91"):
+            return f"+91 {sub_digits[2:7]} {sub_digits[7:]}"
 
-    return s if len(digits) >= 7 else ""
+    return ""
 
 def extract_phone_from_text(text):
-    """Scan string for phone number pattern with unicode normalization."""
+    """Searches plain text block for phone numbers using strict phone cleaner."""
     if not text:
         return ""
-    norm = unicodedata.normalize('NFKD', str(text))
-    norm = re.sub(r'[\xa0\u202f\u200b\u200e]', ' ', norm)
-    
-    m = re.search(r'(?:\+?91[\s-]?)?(?:0?[6-9]\d{4}[\s\-]?\d{5}|0\d{1,4}[\s\-]?(?:\d{3,4}[\s\-]?\d{4}|\d{6,8})|\b[6-9]\d{9}\b|\(?\d{3}\)?[\s.-]?\d{3}[\s.-]?\d{4})', norm)
+    m = re.search(r'(?:\+?\d{1,4}[\s-]?)?(?:(?:\(?\d{2,5}\)?[\s-]?)?\d{6,10})', str(text))
     if m:
-        return clean_phone_number(m.group(0))
-    return ""
+        cleaned = clean_phone_number(m.group(0))
+        if cleaned:
+            return cleaned
+    return clean_phone_number(text)
 
 def extract_phone_from_details(soup):
     """Extract phone number from Google Maps place details HTML or panel."""
     # 1. Element with data-item-id containing phone (most accurate)
-    phone_item = soup.find(lambda e: e.name in ["button", "div", "a"] and str(e.get("data-item-id", "")).startswith("phone:"))
+    phone_item = soup.find(lambda e: e.name in ["button", "div", "a"] and "phone:" in str(e.get("data-item-id", "")))
     if phone_item:
-        item_id = str(phone_item.get("data-item-id", "")).replace("phone:tel:", "").replace("phone:", "").strip()
-        aria = phone_item.get("aria-label", "").replace("Phone:", "").strip()
-        phone = clean_phone_number(item_id or aria)
+        item_id = str(phone_item.get("data-item-id", ""))
+        aria = phone_item.get("aria-label", "")
+        phone = clean_phone_number(item_id) or clean_phone_number(aria)
         if phone:
             return phone
 
     # 2. Tooltip button containing phone
     phone_btn = soup.find("button", {"data-tooltip": re.compile(r"phone", re.I)})
     if phone_btn:
-        aria = phone_btn.get("aria-label", "").replace("Phone:", "").strip()
+        aria = phone_btn.get("aria-label", "")
         text = phone_btn.get_text(strip=True)
-        phone = clean_phone_number(aria or text)
+        phone = clean_phone_number(aria) or clean_phone_number(text)
         if phone:
             return phone
 
     # 3. Anchor with tel: protocol
     tel_a = soup.find("a", href=re.compile(r"^tel:", re.I))
     if tel_a:
-        raw_tel = re.sub(r"^tel:", "", tel_a.get("href", ""), flags=re.I).strip()
-        phone = clean_phone_number(raw_tel)
+        phone = clean_phone_number(tel_a.get("href", ""))
         if phone:
             return phone
 
@@ -293,11 +485,166 @@ def generate_search_queries(keyword, city):
 
     return queries
 
+PROFILE_DIR = os.path.join(os.environ.get("LOCALAPPDATA", BASE_DIR), "DataScraper_ChromeProfile")
+
+def is_remote_debugging_available(port=9222):
+    """Check if an existing Google Chrome instance is running with remote debugging on port 9222."""
+    try:
+        import urllib.request
+        with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/version", timeout=0.8) as res:
+            return res.status == 200
+    except Exception:
+        return False
+
+def get_scraper_profile_dir():
+    """Return the persistent directory path where the scraper browser stores cookies and logins."""
+    os.makedirs(PROFILE_DIR, exist_ok=True)
+    return PROFILE_DIR
+
+def cleanup_lingering_scraper_chrome():
+    """Terminate any orphan Chrome processes holding the DataScraper_ChromeProfile lock."""
+    try:
+        import psutil
+        for proc in psutil.process_iter(['pid', 'name', 'cmdline']):
+            if proc.info['name'] and 'chrome' in proc.info['name'].lower():
+                cmdline = " ".join(proc.info.get('cmdline') or [])
+                if 'DataScraper_ChromeProfile' in cmdline:
+                    try:
+                        proc.terminate()
+                    except Exception:
+                        pass
+        time.sleep(0.5)
+    except Exception:
+        pass
+
+def find_chrome_executable():
+    """Locate the installed Google Chrome binary path on Windows."""
+    paths = [
+        os.path.expandvars(r"%ProgramFiles%\Google\Chrome\Application\chrome.exe"),
+        os.path.expandvars(r"%ProgramFiles(x86)%\Google\Chrome\Application\chrome.exe"),
+        os.path.expandvars(r"%LOCALAPPDATA%\Google\Chrome\Application\chrome.exe"),
+    ]
+    for p in paths:
+        if os.path.exists(p):
+            return p
+    return "chrome.exe"
+
+def open_google_login_browser(target_url="https://accounts.google.com"):
+    """
+    Launches genuine Google Chrome using the scraper's persistent profile.
+    This lets the user sign into Google without encountering bot/automation blocks.
+    Once signed in, the session is saved permanently for all future scrapes.
+    """
+    cleanup_lingering_scraper_chrome()
+    chrome_exe = find_chrome_executable()
+    profile_dir = get_scraper_profile_dir()
+
+    cmd = [
+        chrome_exe,
+        f"--user-data-dir={profile_dir}",
+        "--no-first-run",
+        "--no-default-browser-check",
+        target_url
+    ]
+    import subprocess
+    return subprocess.Popen(cmd)
+
+def check_auth_status():
+    """
+    Check if the persistent scraper profile or a live remote debugging session is authenticated.
+    """
+    if is_remote_debugging_available(9222):
+        return {
+            "logged_in": True,
+            "email": "Live Chrome Session (Port 9222)",
+            "mode": "remote_debug",
+            "details": "Connected to active Chrome browser with your open accounts and tabs."
+        }
+
+    profile_dir = get_scraper_profile_dir()
+    cand_prefs = [
+        os.path.join(profile_dir, "Default", "Preferences"),
+        os.path.join(profile_dir, "Preferences")
+    ]
+    for p in cand_prefs:
+        if os.path.exists(p):
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                accounts = data.get("account_info", [])
+                if isinstance(accounts, list) and accounts:
+                    emails = [a.get("email") for a in accounts if a.get("email")]
+                    if emails:
+                        return {
+                            "logged_in": True,
+                            "email": emails[0],
+                            "mode": "persistent_profile",
+                            "details": f"Signed in as {emails[0]}"
+                        }
+            except Exception:
+                pass
+
+    # Check cookies database for Google authentication cookies
+    cand_cookies = [
+        os.path.join(profile_dir, "Default", "Network", "Cookies"),
+        os.path.join(profile_dir, "Network", "Cookies")
+    ]
+    for c in cand_cookies:
+        if os.path.exists(c):
+            try:
+                import sqlite3
+                conn = sqlite3.connect(f"file:{c}?mode=ro", uri=True)
+                cursor = conn.cursor()
+                cursor.execute("SELECT name FROM cookies WHERE host_key LIKE '%google%' AND name IN ('SID', 'SSID', 'HSID', 'SAPISID')")
+                rows = cursor.fetchall()
+                conn.close()
+                if len(rows) >= 2:
+                    return {
+                        "logged_in": True,
+                        "email": "Google Account Active",
+                        "mode": "persistent_profile",
+                        "details": "Google authentication session verified"
+                    }
+            except Exception:
+                pass
+
+    return {
+        "logged_in": False,
+        "email": None,
+        "mode": "persistent_profile",
+        "details": "Not signed in yet. Click 'Sign In to Google' to sign in once."
+    }
+
 def create_driver(headless=False):
     """
     Initializes a resilient undetected Chrome instance equipped with stealth flags
-    and automation masking. Uses isolated instance configurations to avoid file lock collisions.
+    and automation masking.
+    
+    1. If Chrome is already running with remote debugging (--remote-debugging-port=9222),
+       it attaches directly to that live, already signed-in browser.
+    2. Otherwise, uses the persistent scraper profile (DataScraper_ChromeProfile)
+       so any Google sign-in is permanently saved across all future scraper runs.
     """
+    major_version = get_chrome_major_version()
+
+    # 1. Check for live Chrome session on remote debugging port
+    if is_remote_debugging_available(9222):
+        safe_print("[Browser] Found active Chrome instance on remote debugging port 9222. Attaching directly...")
+        try:
+            options = uc.ChromeOptions()
+            options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
+            driver = uc.Chrome(options=options)
+            driver._is_remote_debug = True
+            safe_print("[Browser] Successfully attached to live Chrome session!")
+            return driver
+        except Exception as e:
+            safe_print(f"[Browser] Notice attaching to port 9222: {e}. Falling back to persistent profile...")
+
+    # 2. Use persistent scraper profile
+    cleanup_lingering_scraper_chrome()
+    profile_dir = get_scraper_profile_dir()
+    safe_print(f"[Browser] Launching with persistent profile at: {profile_dir}")
+
     options = uc.ChromeOptions()
     if headless:
         options.add_argument("--headless=new")
@@ -315,24 +662,22 @@ def create_driver(headless=False):
     options.add_argument("--disable-popup-blocking")
     options.add_argument("--disable-infobars")
 
-    # Suppress permission popups (geolocation, notifications)
+    # Suppress permission popups
     prefs = {
         "profile.default_content_setting_values.notifications": 2,
-        "profile.default_content_setting_values.geolocation": 2,
-        "credentials_enable_service": False,
-        "profile.password_manager_enabled": False
+        "profile.default_content_setting_values.geolocation": 2
     }
     options.add_experimental_option("prefs", prefs)
 
-    major_version = get_chrome_major_version()
     driver = None
     try:
         if major_version:
-            driver = uc.Chrome(options=options, version_main=major_version)
+            driver = uc.Chrome(options=options, user_data_dir=profile_dir, version_main=major_version)
         else:
-            driver = uc.Chrome(options=options)
+            driver = uc.Chrome(options=options, user_data_dir=profile_dir)
     except Exception as e:
-        safe_print(f"Driver launch notice: {e}. Retrying clean instance...")
+        safe_print(f"[Browser] Notice on launch: {e}. Retrying clean profile instance...")
+        cleanup_lingering_scraper_chrome()
         time.sleep(1.5)
         clean_opts = uc.ChromeOptions()
         if headless:
@@ -342,9 +687,11 @@ def create_driver(headless=False):
         clean_opts.add_argument("--lang=en-US,en;q=0.9")
         clean_opts.add_argument("--disable-blink-features=AutomationControlled")
         if major_version:
-            driver = uc.Chrome(options=clean_opts, version_main=major_version)
+            driver = uc.Chrome(options=clean_opts, user_data_dir=profile_dir, version_main=major_version)
         else:
-            driver = uc.Chrome(options=clean_opts)
+            driver = uc.Chrome(options=clean_opts, user_data_dir=profile_dir)
+
+    driver._is_remote_debug = False
 
     # Inject CDP stealth scripts to hide webdriver indicators
     try:
@@ -426,12 +773,17 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
                 break
 
             query_encoded = current_query.replace(" ", "+")
+            if q_idx > 1:
+                inter_zone_delay = random.uniform(3.5, 6.0)
+                safe_print(f"   [Pacing] Human transition pause ({inter_zone_delay:.1f}s) before next zone...")
+                time.sleep(inter_zone_delay)
+
             url = f"https://www.google.com/maps/search/{query_encoded}"
             safe_print(f"\n[{q_idx}/{len(queries)}] Google Maps Zone: \"{current_query}\" (Progress: {len(results)}/{target_count} leads)")
 
             try:
                 driver.get(url)
-                time.sleep(random.uniform(3.0, 4.5))
+                time.sleep(random.uniform(3.2, 4.8))
             except Exception as e:
                 safe_print(f"Error loading {current_query}: {e}")
                 err_str = str(e).lower()
@@ -462,7 +814,17 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
                         time.sleep(2)
                         break
 
-            # Dismiss consent banner if shown
+            # Dismiss consent banner or One Tap overlay if shown
+            try:
+                driver.execute_script("""
+                    var prompt = document.getElementById('credential_picker_container');
+                    if (prompt) prompt.remove();
+                    var iframes = document.querySelectorAll("iframe[src*='accounts.google.com/gsi']");
+                    iframes.forEach(f => f.remove());
+                """)
+            except Exception:
+                pass
+
             if q_idx <= 2:
                 try:
                     consent_btns = driver.find_elements(By.XPATH, "//button[contains(., 'Accept all') or contains(., 'Agree') or contains(., 'I agree')]")
@@ -501,18 +863,19 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
                     h1 = soup_single.find("h1")
                     if h1 and h1.get_text(strip=True).lower() not in ["results", "google maps"]:
                         s_name = h1.get_text(strip=True)
-                        norm_s = re.sub(r'[^a-zA-Z0-9]', '', s_name.lower())
+                        norm_s = normalize_for_dedup(s_name)
                         if norm_s and norm_s not in seen_names:
-                            s_phone = extract_phone_from_details(soup_single)
+                            s_phone = clean_phone_number(extract_phone_from_details(soup_single))
                             norm_p = re.sub(r'\D', '', s_phone) if s_phone else ""
-                            if not norm_p or norm_p not in seen_phones:
-                                seen_names.add(norm_s)
-                                if norm_p:
-                                    seen_phones.add(norm_p)
-                                lead = {"Business Name": s_name, "Phone Number": s_phone or "Not available"}
-                                results.append(lead)
-                                safe_print(f"[{len(results)}/{target_count}] Single Place: {s_name} | Phone: {lead['Phone Number']}")
-                                notify(lead, current_query)
+                            if norm_p and norm_p in seen_phones:
+                                s_phone = ""
+                            seen_names.add(norm_s)
+                            if norm_p and s_phone:
+                                seen_phones.add(norm_p)
+                            lead = {"Business Name": s_name, "Phone Number": s_phone or "Not available"}
+                            results.append(lead)
+                            safe_print(f"[{len(results)}/{target_count}] Single Place: {s_name} | Phone: {lead['Phone Number']}")
+                            notify(lead, current_query)
                 except Exception:
                     pass
                 continue
@@ -562,35 +925,121 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
                         if not name:
                             continue
 
-                        norm_name = re.sub(r'[^a-zA-Z0-9]', '', name.lower())
+                        norm_name = normalize_for_dedup(name)
                         if norm_name in seen_names:
                             continue
 
-                        # Click card anchor in-place to open details panel
-                        driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", link)
-                        time.sleep(0.2)
-                        driver.execute_script("arguments[0].click();", link)
-                        time.sleep(random.uniform(1.2, 1.6))
+                        # Human-like click with realistic mouse movement
+                        human_click(driver, link)
 
-                        # Extract phone from opened panel
-                        soup_panel = BeautifulSoup(driver.page_source, "html.parser")
-                        phone = extract_phone_from_details(soup_panel)
+                        # Wait for details panel to update to this specific business (prevent stale panel bleed)
+                        phone = ""
+                        panel_matched = False
 
-                        if not phone:
-                            phone = extract_phone_from_text(soup_panel.get_text())
+                        for attempt in range(12):
+                            try:
+                                # Target place details title heading (avoid search results feed header)
+                                h1_elems = driver.find_elements(By.CSS_SELECTOR, "h1.DUwDvf, div.lMbq3e h1, div.TIHn2 h1, [role='main'] h1.DUwDvf")
+                                for h1_elem in h1_elems:
+                                    h1_text = h1_elem.text.strip()
+                                    if h1_text and h1_text.lower() not in ["results", "sponsored", "search results", "google maps"]:
+                                        norm_h1 = normalize_for_dedup(h1_text)
+                                        if norm_h1 and (norm_h1 in norm_name or norm_name in norm_h1):
+                                            panel_matched = True
+                                            break
+                                        # Also match by token overlap if names are long or slightly truncated
+                                        t_card = set(re.findall(r'\w+', norm_name))
+                                        t_h1 = set(re.findall(r'\w+', norm_h1))
+                                        if t_card and t_h1 and (len(t_card & t_h1) / min(len(t_card), len(t_h1)) >= 0.6):
+                                            panel_matched = True
+                                            break
+
+                                if panel_matched:
+                                    # Fast direct extraction from live DOM phone elements
+                                    phone_selectors = [
+                                        "[data-item-id*='phone']",
+                                        "button[aria-label*='Phone:']",
+                                        "a[aria-label*='Phone:']",
+                                        "button[data-tooltip*='phone']",
+                                        "a[href^='tel:']"
+                                    ]
+                                    p_elems = driver.find_elements(By.CSS_SELECTOR, ", ".join(phone_selectors))
+                                    for p in p_elems:
+                                        # 1. data-item-id (most precise, e.g. "phone:tel:07360800001")
+                                        item_id = p.get_attribute("data-item-id") or ""
+                                        if "phone:" in item_id:
+                                            cand = clean_phone_number(item_id)
+                                            if cand:
+                                                phone = cand
+                                                break
+
+                                        # 2. aria-label (e.g. "Phone: 073608 00001")
+                                        aria = p.get_attribute("aria-label") or ""
+                                        if aria:
+                                            cand = clean_phone_number(aria)
+                                            if cand:
+                                                phone = cand
+                                                break
+
+                                        # 3. tel: link
+                                        href = p.get_attribute("href") or ""
+                                        if href.startswith("tel:"):
+                                            cand = clean_phone_number(href)
+                                            if cand:
+                                                phone = cand
+                                                break
+
+                                        # 4. inner text
+                                        txt = p.text.strip()
+                                        if txt:
+                                            cand = clean_phone_number(txt)
+                                            if cand:
+                                                phone = cand
+                                                break
+
+                                    if phone:
+                                        break
+                            except Exception:
+                                pass
+                            time.sleep(0.2)
+
+                        # Fallback if live DOM direct query didn't catch phone or panel took longer
+                        if not phone and panel_matched:
+                            try:
+                                soup_panel = BeautifulSoup(driver.page_source, "html.parser")
+                                phone = extract_phone_from_details(soup_panel)
+                            except Exception:
+                                pass
+
+                        phone_clean = clean_phone_number(phone)
+                        norm_phone = re.sub(r'\D', '', phone_clean) if phone_clean else ""
+
+                        # Prevent duplicate phone numbers across different listings
+                        if norm_phone:
+                            if norm_phone in seen_phones:
+                                safe_print(f"   -> Repeated phone ({phone_clean}) detected. Not assigning duplicate phone.")
+                                phone_clean = ""
+                            else:
+                                seen_phones.add(norm_phone)
 
                         seen_names.add(norm_name)
-                        norm_phone = re.sub(r'\D', '', phone) if phone else ""
-                        if norm_phone:
-                            seen_phones.add(norm_phone)
+
+                        # Clean display name (strip trailing promotional / keyword stuffing noise)
+                        display_name = re.sub(r'\s*[\-|–|—|\|]\s*(?:best|top|famous|cheap|popular|weddingz|fully ac).*$', '', name, flags=re.I).strip()
+                        if not display_name:
+                            display_name = name
 
                         lead = {
-                            "Business Name": name,
-                            "Phone Number": phone if phone else "Not available"
+                            "Business Name": display_name,
+                            "Phone Number": phone_clean if phone_clean else "Not available"
                         }
                         results.append(lead)
-                        safe_print(f"[{len(results)}/{target_count}] {name} | Phone: {lead['Phone Number']}")
+                        safe_print(f"[{len(results)}/{target_count}] {display_name} | Phone: {lead['Phone Number']}")
                         notify(lead, current_query)
+
+                        # Natural human dwell & reading simulation
+                        human_reading_pause(len(results))
+                        human_subtle_jitter(driver)
 
                     except Exception:
                         continue
@@ -598,23 +1047,17 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
                 if len(results) >= target_count or retries >= 6:
                     break
 
-                # Adaptive Scrolling
+                # Human-like Adaptive Scrolling with incremental wheel ticks
                 try:
-                    driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", feed_element)
-                    time.sleep(random.uniform(0.4, 0.7))
-                    driver.execute_script("""
-                        var cards = arguments[0].querySelectorAll('a.hfpxzc');
-                        if (cards.length > 0) {
-                            cards[cards.length - 1].scrollIntoView({behavior: 'smooth', block: 'end'});
-                        }
-                    """, feed_element)
+                    human_smooth_scroll(driver, feed_element, direction="down")
 
                     if retries >= 2:
-                        driver.execute_script("arguments[0].scrollTop -= 200;", feed_element)
-                        time.sleep(0.3)
-                        driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", feed_element)
+                        # Human re-scrolls up slightly and then down
+                        human_smooth_scroll(driver, feed_element, total_distance=220, direction="up")
+                        time.sleep(random.uniform(0.3, 0.6))
+                        human_smooth_scroll(driver, feed_element, total_distance=550, direction="down")
 
-                    time.sleep(random.uniform(1.4, 2.0))
+                    time.sleep(random.uniform(1.2, 1.8))
                 except Exception:
                     break
 
@@ -629,14 +1072,17 @@ def scrape_google_maps(keyword, city, target_count=100, progress_callback=None, 
         safe_print(f"\nGoogle Maps scraping notice: {e}")
     finally:
         if driver:
-            try:
-                driver.__del__ = lambda: None
-            except Exception:
-                pass
-            try:
-                driver.quit()
-            except Exception:
-                pass
+            if getattr(driver, "_is_remote_debug", False):
+                safe_print("[Browser] Scrape finished. Detaching from live Chrome session without closing.")
+            else:
+                try:
+                    driver.__del__ = lambda: None
+                except Exception:
+                    pass
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
 
     return results
 
@@ -710,7 +1156,7 @@ def scrape_bing_maps(keyword, city, target_count=100, progress_callback=None, st
                 if not name:
                     continue
 
-                norm_name = re.sub(r'[^a-zA-Z0-9]', '', name.lower())
+                norm_name = normalize_for_dedup(name)
                 if norm_name in seen_names:
                     continue
 
@@ -801,14 +1247,17 @@ def scrape_bing_maps(keyword, city, target_count=100, progress_callback=None, st
         safe_print(f"Bing Maps scraping notice: {e}")
     finally:
         if driver:
-            try:
-                driver.__del__ = lambda: None
-            except Exception:
-                pass
-            try:
-                driver.quit()
-            except Exception:
-                pass
+            if getattr(driver, "_is_remote_debug", False):
+                safe_print("[Browser] Scrape finished. Detaching from live Chrome session without closing.")
+            else:
+                try:
+                    driver.__del__ = lambda: None
+                except Exception:
+                    pass
+                try:
+                    driver.quit()
+                except Exception:
+                    pass
 
     return results
 
@@ -824,7 +1273,7 @@ def scrape_leads(keyword, city, target_count=100, source="all", progress_callbac
     source = (source or "all").lower()
 
     if source == "bing":
-        return scrape_bing_maps(
+        leads = scrape_bing_maps(
             keyword=keyword,
             city=city,
             target_count=target_count,
@@ -832,8 +1281,9 @@ def scrape_leads(keyword, city, target_count=100, source="all", progress_callbac
             stop_event=stop_event,
             headless=headless
         )
+        return deduplicate_leads(leads)
     elif source == "google":
-        return scrape_google_maps(
+        leads = scrape_google_maps(
             keyword=keyword,
             city=city,
             target_count=target_count,
@@ -841,6 +1291,7 @@ def scrape_leads(keyword, city, target_count=100, source="all", progress_callbac
             stop_event=stop_event,
             headless=headless
         )
+        return deduplicate_leads(leads)
     else:
         # Multi-Engine Mode: Harvest Google Maps first, then Bing Maps for guaranteed maximum yield
         safe_print(f"\n[Multi-Engine Scraper] Target: {target_count} leads for '{keyword}' in '{city}'")
@@ -856,12 +1307,12 @@ def scrape_leads(keyword, city, target_count=100, source="all", progress_callbac
         )
 
         if len(g_leads) >= target_count or (stop_event and stop_event.is_set()):
-            return g_leads
+            return deduplicate_leads(g_leads)
 
         remaining = target_count - len(g_leads)
         safe_print(f"\nStage 2: Google Maps provided {len(g_leads)} leads. Seamlessly switching to Bing Maps for remaining {remaining} leads...")
 
-        existing_names = {re.sub(r'[^a-zA-Z0-9]', '', l["Business Name"].lower()) for l in g_leads}
+        existing_names = {normalize_for_dedup(l["Business Name"]) for l in g_leads}
         existing_phones = {re.sub(r'\D', '', l["Phone Number"]) for l in g_leads if l.get("Phone Number") and l["Phone Number"] != "Not available"}
 
         def bing_callback(count, total, lead, q_info):
@@ -882,7 +1333,7 @@ def scrape_leads(keyword, city, target_count=100, source="all", progress_callbac
             existing_phones=existing_phones
         )
 
-        all_leads = g_leads + b_leads
+        all_leads = deduplicate_leads(g_leads + b_leads)
         safe_print(f"\n[Multi-Engine Complete] Extracted {len(all_leads)} unique leads ({len(g_leads)} from Google, {len(b_leads)} from Bing).")
         return all_leads
 

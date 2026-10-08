@@ -506,6 +506,109 @@ tbody td {
     color: var(--text-muted);
 }
 
+/* Authentication Card & Session Status */
+.auth-card {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(15, 23, 42, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 14px;
+    padding: 1.1rem 1.3rem;
+    margin-bottom: 1.6rem;
+    gap: 1rem;
+    transition: all 0.25s ease;
+}
+
+.auth-card:hover {
+    border-color: rgba(59, 130, 246, 0.35);
+    background: rgba(15, 23, 42, 0.7);
+}
+
+.auth-left {
+    display: flex;
+    align-items: center;
+    gap: 0.9rem;
+    flex: 1;
+}
+
+.auth-badge-icon {
+    font-size: 1.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 36px;
+}
+
+.auth-texts {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+}
+
+.auth-title-row {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+    flex-wrap: wrap;
+}
+
+.auth-title {
+    font-size: 0.98rem;
+    font-weight: 600;
+    color: #f1f5f9;
+}
+
+.auth-tag {
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 0.15rem 0.55rem;
+    border-radius: 9999px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.tag-success {
+    background: rgba(16, 185, 129, 0.2);
+    color: #34d399;
+    border: 1px solid rgba(16, 185, 129, 0.4);
+}
+
+.tag-warning {
+    background: rgba(245, 158, 11, 0.2);
+    color: #fbbf24;
+    border: 1px solid rgba(245, 158, 11, 0.4);
+}
+
+.auth-desc {
+    font-size: 0.82rem;
+    color: var(--text-muted);
+    margin: 0;
+    line-height: 1.35;
+}
+
+.auth-right {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.icon-btn {
+    padding: 0.55rem 0.75rem;
+    font-size: 0.95rem;
+}
+
+@media (max-width: 650px) {
+    .auth-card {
+        flex-direction: column;
+        align-items: flex-start;
+    }
+    .auth-right {
+        width: 100%;
+        justify-content: flex-end;
+    }
+}
+
 footer {
     text-align: center;
     margin-top: 2rem;
