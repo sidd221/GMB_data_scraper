@@ -17,7 +17,7 @@
         <header>
             <div class="badge">Google Maps Extractor</div>
             <h1>LeadGen<span class="highlight">Pro</span></h1>
-            <p>Enter any keyword and city to extract business names and verified phone numbers directly from Google Maps.</p>
+            <p>Enter any keyword and city to extract business names, verified phone numbers, and websites directly from Google Maps.</p>
         </header>
 
         <div class="card glassmorphism">
@@ -43,6 +43,31 @@
                 </div>
             </div>
 
+            <!-- Persistent Lead Memory Card -->
+            <div class="memory-card" id="memory-card">
+                <div class="memory-left">
+                    <div class="memory-badge-icon" id="memory-icon">🧠</div>
+                    <div class="memory-texts">
+                        <div class="memory-title-row">
+                            <span class="memory-title" id="memory-title">Lead Memory: Checking...</span>
+                            <span class="memory-tag" id="memory-tag">SQLite Active</span>
+                        </div>
+                        <p class="memory-desc" id="memory-desc">Previously scraped business leads are preserved in SQLite memory and skipped automatically, guaranteeing fresh leads every time you search.</p>
+                    </div>
+                </div>
+                <div class="memory-right">
+                    <a href="/api/memory/export" class="secondary-btn mini-btn" title="Download master list of all saved leads from memory" id="memory-export-btn">
+                        📥 Master CSV (<span id="memory-count-badge">0</span>)
+                    </a>
+                    <button type="button" class="secondary-btn mini-btn danger-hover" title="Reset memory to allow re-scraping from scratch" onclick="clearMemory()">
+                        🗑️ Reset Memory
+                    </button>
+                    <button type="button" class="secondary-btn icon-btn" title="Refresh Memory Stats" onclick="fetchMemoryStats(true)">
+                        🔄
+                    </button>
+                </div>
+            </div>
+
             <!-- Search Form -->
             <form id="scrape-form" onsubmit="return false;">
                 <div class="input-grid">
@@ -52,29 +77,45 @@
                     </div>
 
                     <div class="input-group">
-                        <label for="city">Target City</label>
-                        <input type="text" id="city" placeholder="e.g. Patna, Delhi, Mumbai, New York" autocomplete="off" required>
+                        <label for="city">Target Cities <span class="sub-label">(Max 4, comma-separated)</span></label>
+                        <input type="text" id="city" placeholder="e.g. Patna, Gaya, Muzaffarpur, Ranchi" autocomplete="off" required>
+                        <small class="hint-text">Enter up to 4 cities separated by commas to harvest leads across all of them.</small>
                     </div>
                 </div>
 
                 <div class="input-group">
-                    <label for="target-count">Target Number of Leads</label>
+                    <label for="target-count">Target Leads per City <span class="sub-label">(Max 500 per city)</span></label>
                     <div class="count-selector">
                         <input type="number" id="target-count" value="100" min="5" max="500">
                         <div class="pills">
-                            <button type="button" class="pill" onclick="setCount(25)">25</button>
                             <button type="button" class="pill" onclick="setCount(50)">50</button>
                             <button type="button" class="pill active" onclick="setCount(100)">100</button>
                             <button type="button" class="pill" onclick="setCount(200)">200</button>
+                            <button type="button" class="pill" onclick="setCount(500)">500</button>
                         </div>
                     </div>
+                    <small class="hint-text" id="target-leads-hint">Target: <strong>100 leads per city</strong></small>
+                </div>
+
                 <div class="input-group">
                     <label for="source">Data Engine / Search Source</label>
                     <select id="source">
-                        <option value="all" selected>⚡ Multi-Engine: Google + Bing Maps (Maximum Leads & Auto-Fallback)</option>
-                        <option value="google">🌐 Google Maps Only</option>
-                        <option value="bing">🔷 Bing Maps Only (Zero Rate-Limits & Instant Verified Numbers)</option>
+                        <option value="all" selected>⚡ Multi-Engine: Google + Bing Maps (Guaranteed 100% Leads & Auto-Fallback)</option>
+                        <option value="google">🌐 Google Maps (Deep Geographic Zones)</option>
+                        <option value="bing">🔷 Bing Maps (Zero Rate-Limits & Instant Verified Numbers)</option>
                     </select>
+                </div>
+
+                <!-- Memory Skip Option Toggle -->
+                <div class="memory-toggle-container">
+                    <label class="memory-toggle-label">
+                        <input type="checkbox" id="skip-memory-checkbox" checked>
+                        <span class="toggle-slider"></span>
+                        <span class="toggle-text">
+                            <strong>🧠 Skip previously scraped leads (Recommended)</strong>
+                            <span class="toggle-subtext">Automatically checks memory and filters out past leads across app restarts so you get brand-new, different leads every time.</span>
+                        </span>
+                    </label>
                 </div>
 
                 <button type="submit" id="scrape-btn" class="glow-button">
@@ -118,6 +159,7 @@
                 <div class="table-header">
                     <h3>Extracted Leads (<span id="table-lead-count">0</span>)</h3>
                     <div class="table-actions">
+                        <input type="text" id="table-search" placeholder="🔍 Search leads..." oninput="filterTable()" class="table-search-input">
                         <a id="download-btn" href="#" class="glow-button mini-btn">Download CSV</a>
                         <button type="button" class="secondary-btn mini-btn" onclick="copyTableData()">Copy All</button>
                     </div>
@@ -127,9 +169,11 @@
                     <table id="leads-table">
                         <thead>
                             <tr>
-                                <th style="width: 60px;">#</th>
+                                <th style="width: 45px;">#</th>
                                 <th>Business Name</th>
-                                <th style="width: 180px;">Phone Number</th>
+                                <th style="width: 170px;">Phone Number</th>
+                                <th style="width: 200px;">Website</th>
+                                <th style="width: 130px;">City</th>
                             </tr>
                         </thead>
                         <tbody id="leads-tbody">
@@ -159,18 +203,44 @@
                     p.classList.remove('active');
                 }
             });
+            updateTargetHint();
+        }
+
+        function updateTargetHint() {
+            const cityInput = (document.getElementById('city').value || '').trim();
+            const count = parseInt(document.getElementById('target-count').value, 10) || 100;
+            const cities = cityInput.split(',').map(c => c.trim()).filter(Boolean);
+            const numCities = Math.min(4, Math.max(1, cities.length));
+            const total = count * numCities;
+            const hint = document.getElementById('target-leads-hint');
+            if (hint) {
+                if (cities.length > 1) {
+                    hint.innerHTML = `Target: <strong>${count} leads per city</strong> × ${numCities} cities = <strong>up to ${total} total leads</strong>.`;
+                } else {
+                    hint.innerHTML = `Target: <strong>${count} leads</strong> for ${cities[0] || 'selected city'}.`;
+                }
+            }
         }
 
         document.getElementById('scrape-form').addEventListener('submit', async (e) => {
             e.preventDefault();
             const keyword = document.getElementById('keyword').value.trim();
             const city = document.getElementById('city').value.trim();
-            const targetCount = parseInt(document.getElementById('target-count').value, 10) || 100;
+            const perCityTarget = parseInt(document.getElementById('target-count').value, 10) || 100;
 
             if (!keyword || !city) {
                 alert("Please enter both a Business Keyword and City.");
                 return;
             }
+
+            const rawCities = city.split(',').map(c => c.trim()).filter(Boolean);
+            if (rawCities.length > 4) {
+                alert(`You entered ${rawCities.length} cities. Maximum 4 cities are allowed at a time. Please remove the extra cities and try again.`);
+                return;
+            }
+
+            const numCities = Math.max(1, rawCities.length);
+            const totalExpected = perCityTarget * numCities;
 
             // Reset UI
             displayedCount = 0;
@@ -185,23 +255,25 @@
             document.getElementById('status-title').textContent = "Scraping in progress...";
             const source = document.getElementById('source').value;
             const srcNames = { 'all': 'Multi-Engine (Google + Bing)', 'google': 'Google Maps', 'bing': 'Bing Maps' };
-            document.getElementById('status-text').textContent = `Launching Chrome for ${srcNames[source] || 'scraper'} on '${keyword}' in '${city}'...`;
+            const locText = rawCities.length > 1 ? `across ${rawCities.join(', ')} (${perCityTarget} leads/city, up to ${totalExpected} total)` : `in '${city}' (${perCityTarget} leads)`;
+            document.getElementById('status-text').textContent = `Launching Chrome for ${srcNames[source] || 'scraper'} on '${keyword}' ${locText}...`;
             document.getElementById('progress-bar-fill').style.width = '0%';
-            document.getElementById('stat-count').textContent = `0 of ${targetCount} leads`;
+            document.getElementById('stat-count').textContent = `0 of ${totalExpected} leads`;
             document.getElementById('stat-percent').textContent = '0%';
 
             try {
+                const skipMemory = document.getElementById('skip-memory-checkbox') ? document.getElementById('skip-memory-checkbox').checked : true;
                 const res = await fetch('/api/scrape', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ keyword, city, target_count: targetCount, source: source })
+                    body: JSON.stringify({ keyword, city, target_count: perCityTarget, source: source, skip_memory: skipMemory })
                 });
                 const data = await res.json();
 
                 if (data.error) throw new Error(data.error);
 
                 currentJobId = data.job_id;
-                startPolling(currentJobId, targetCount);
+                startPolling(currentJobId, totalExpected);
 
             } catch (err) {
                 finishScrape(false, "Could not start scraper: " + err.message);
@@ -238,15 +310,28 @@
                             const lead = data.leads[i];
                             const tr = document.createElement('tr');
                             const phone = (lead["Phone Number"] || lead["phone"] || lead["Phone"] || "").trim();
-                            const hasPhone = phone && phone !== "Not available" && phone !== "N/A";
+                            const hasPhone = phone && phone !== "Not available" && phone !== "N/A" && phone !== "NA";
                             const phoneDisplay = hasPhone 
                                 ? `<a href="tel:${escapeHtml(phone.replace(/\s+/g, ''))}" class="phone-link">📞 ${escapeHtml(phone)}</a>`
-                                : `<span class="muted-text">N/A</span>`;
+                                : `<span class="muted-text">NA</span>`;
+
+                            const website = (lead["Website"] || lead["website"] || "").trim();
+                            const hasWebsite = website && website !== "Not available" && website !== "N/A" && website !== "NA";
+                            const websiteDisplay = hasWebsite 
+                                ? `<a href="${escapeHtml(website)}" target="_blank" rel="noopener noreferrer" class="website-link" title="${escapeHtml(website)}">🌐 ${escapeHtml(website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</a>`
+                                : `<span class="muted-text">NA</span>`;
+
+                            const cityVal = lead["City"] || lead["city"] || "";
+                            const cityDisplay = cityVal 
+                                ? `<span class="city-pill">${escapeHtml(cityVal)}</span>` 
+                                : `<span class="muted-text">-</span>`;
 
                             tr.innerHTML = `
                                 <td>${i + 1}</td>
                                 <td class="lead-name">${escapeHtml(lead["Business Name"] || "Unnamed")}</td>
                                 <td>${phoneDisplay}</td>
+                                <td>${websiteDisplay}</td>
+                                <td>${cityDisplay}</td>
                             `;
                             tbody.appendChild(tr);
                         }
@@ -257,10 +342,14 @@
                     // Check for completion or error
                     if (data.status === 'completed' || data.status === 'stopped') {
                         clearInterval(pollTimer);
-                        finishScrape(true, data.message, data.filename, data.leads);
+                        finishScrape(true, data.message, data.filename, data.leads, data.status);
                     } else if (data.status === 'error') {
                         clearInterval(pollTimer);
-                        finishScrape(false, data.message);
+                        if (data.leads && data.leads.length > 0) {
+                            finishScrape(true, data.message, data.filename, data.leads, 'stopped');
+                        } else {
+                            finishScrape(false, data.message);
+                        }
                     }
 
                 } catch (err) {
@@ -279,50 +368,74 @@
             }
         }
 
-        function finishScrape(isSuccess, message, filename, leads) {
+        function finishScrape(isSuccess, message, filename, leads, statusType = 'completed') {
             document.getElementById('status-container').classList.add('hidden');
             document.getElementById('scrape-btn').classList.remove('hidden');
 
             const resultBox = document.getElementById('result-container');
             resultBox.classList.remove('hidden');
 
-            if (isSuccess) {
+            const leadList = leads || [];
+            const hasLeads = leadList.length > 0;
+
+            if (isSuccess || hasLeads) {
                 // Re-sync final deduplicated leads into table
-                if (leads && leads.length > 0) {
+                if (hasLeads) {
                     const tbody = document.getElementById('leads-tbody');
                     tbody.innerHTML = '';
-                    leads.forEach((lead, i) => {
+                    leadList.forEach((lead, i) => {
                         const tr = document.createElement('tr');
                         const phone = (lead["Phone Number"] || lead["phone"] || lead["Phone"] || "").trim();
-                        const hasPhone = phone && phone !== "Not available" && phone !== "N/A";
+                        const hasPhone = phone && phone !== "Not available" && phone !== "N/A" && phone !== "NA";
                         const phoneDisplay = hasPhone 
                             ? `<a href="tel:${escapeHtml(phone.replace(/\s+/g, ''))}" class="phone-link">📞 ${escapeHtml(phone)}</a>`
-                            : `<span class="muted-text">N/A</span>`;
+                            : `<span class="muted-text">NA</span>`;
+
+                        const website = (lead["Website"] || lead["website"] || "").trim();
+                        const hasWebsite = website && website !== "Not available" && website !== "N/A" && website !== "NA";
+                        const websiteDisplay = hasWebsite 
+                            ? `<a href="${escapeHtml(website)}" target="_blank" rel="noopener noreferrer" class="website-link" title="${escapeHtml(website)}">🌐 ${escapeHtml(website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, ''))}</a>`
+                            : `<span class="muted-text">NA</span>`;
+
+                        const cityVal = lead["City"] || lead["city"] || "";
+                        const cityDisplay = cityVal 
+                            ? `<span class="city-pill">${escapeHtml(cityVal)}</span>` 
+                            : `<span class="muted-text">-</span>`;
 
                         tr.innerHTML = `
                             <td>${i + 1}</td>
                             <td class="lead-name">${escapeHtml(lead["Business Name"] || "Unnamed")}</td>
                             <td>${phoneDisplay}</td>
+                            <td>${websiteDisplay}</td>
+                            <td>${cityDisplay}</td>
                         `;
                         tbody.appendChild(tr);
                     });
-                    displayedCount = leads.length;
+                    displayedCount = leadList.length;
                     document.getElementById('table-lead-count').textContent = displayedCount;
                     document.getElementById('table-container').classList.remove('hidden');
                 }
 
+                const isStopped = statusType === 'stopped';
+                const title = isStopped 
+                    ? `🛑 Scraping Stopped (${leadList.length} Leads Collected)` 
+                    : `🎉 Extraction Completed (${leadList.length} Leads Collected)`;
+                const boxClass = isStopped ? 'warning-box' : 'success-box';
+
                 resultBox.innerHTML = `
-                    <div class="success-box">
-                        <h3>🎉 Extraction Completed</h3>
+                    <div class="${boxClass}">
+                        <h3>${title}</h3>
                         <p>${escapeHtml(message)}</p>
-                        ${filename ? `<a href="/download/${encodeURIComponent(filename)}" class="glow-button download-link">⬇️ Download CSV File</a>` : ''}
+                        ${filename ? `<a href="/download/${encodeURIComponent(filename)}" class="glow-button download-link">⬇️ Download CSV (${leadList.length} Leads)</a>` : ''}
                     </div>
                 `;
 
                 if (filename) {
                     const downloadBtn = document.getElementById('download-btn');
                     downloadBtn.href = `/download/${encodeURIComponent(filename)}`;
+                    downloadBtn.textContent = `Download CSV (${leadList.length})`;
                 }
+                fetchMemoryStats(false);
             } else {
                 resultBox.innerHTML = `
                     <div class="error-box">
@@ -333,21 +446,48 @@
             }
         }
 
+        function filterTable() {
+            const query = (document.getElementById('table-search').value || '').toLowerCase().trim();
+            const rows = document.querySelectorAll('#leads-tbody tr');
+            let visible = 0;
+            rows.forEach(tr => {
+                const text = tr.innerText.toLowerCase();
+                if (!query || text.includes(query)) {
+                    tr.style.display = '';
+                    visible++;
+                } else {
+                    tr.style.display = 'none';
+                }
+            });
+            const countSpan = document.getElementById('table-lead-count');
+            if (countSpan) {
+                countSpan.textContent = query ? `${visible} of ${rows.length}` : rows.length;
+            }
+        }
+
         function copyTableData() {
             const rows = document.querySelectorAll('#leads-table tbody tr');
             if (!rows.length) {
                 alert("No leads to copy!");
                 return;
             }
-            let text = "Business Name\tPhone Number\n";
+            let text = "Business Name\tPhone Number\tWebsite\tCity\n";
+            let copiedCount = 0;
             rows.forEach(tr => {
-                const cols = tr.querySelectorAll('td');
-                if (cols.length >= 3) {
-                    text += `${cols[1].innerText}\t${cols[2].innerText}\n`;
+                if (tr.style.display !== 'none') {
+                    const cols = tr.querySelectorAll('td');
+                    if (cols.length >= 5) {
+                        const bName = cols[1].innerText.trim();
+                        const phone = cols[2].innerText.replace('📞 ', '').trim();
+                        const web = cols[3].innerText.replace('🌐 ', '').trim();
+                        const city = cols[4].innerText.trim();
+                        text += `${bName}\t${phone}\t${web}\t${city}\n`;
+                        copiedCount++;
+                    }
                 }
             });
             navigator.clipboard.writeText(text).then(() => {
-                alert("Copied " + rows.length + " leads to clipboard!");
+                alert("Copied " + copiedCount + " leads to clipboard!");
             });
         }
 
@@ -423,8 +563,55 @@
             }
         }
 
+        async function fetchMemoryStats(manual = false) {
+            try {
+                const res = await fetch('/api/memory/stats');
+                const data = await res.json();
+                const total = data.total_leads || 0;
+                const citiesCount = data.cities_count || 0;
+                const title = document.getElementById('memory-title');
+                const badge = document.getElementById('memory-count-badge');
+                const desc = document.getElementById('memory-desc');
+
+                if (badge) badge.textContent = total;
+                if (title) {
+                    title.textContent = total > 0 
+                        ? `Lead Memory: ${total} unique leads remembered` 
+                        : 'Lead Memory: 0 leads saved (Ready to store new leads)';
+                }
+                if (desc) {
+                    desc.textContent = total > 0
+                        ? `${total} unique leads stored across ${citiesCount} cities. Matching listings will be skipped automatically to deliver brand-new leads.`
+                        : 'Any leads you scrape will be saved here automatically so you never get repeat leads.';
+                }
+                if (manual) {
+                    alert(`Lead Memory Status:\n\nTotal unique leads in memory: ${total}\nCities recorded: ${citiesCount}\n\nDuplicates will be skipped automatically.`);
+                }
+            } catch (err) {
+                console.warn('Memory stats fetch error:', err);
+            }
+        }
+
+        async function clearMemory() {
+            if (!confirm("Are you sure you want to reset lead memory?\n\nThis will clear all saved records, allowing you to re-scrape previous leads from scratch.")) {
+                return;
+            }
+            try {
+                const res = await fetch('/api/memory/clear', { method: 'POST' });
+                const data = await res.json();
+                alert(data.message || 'Lead memory cleared!');
+                fetchMemoryStats(false);
+            } catch (err) {
+                alert('Could not clear memory: ' + err.message);
+            }
+        }
+
         document.addEventListener('DOMContentLoaded', () => {
             checkAuthStatus(false);
+            fetchMemoryStats(false);
+            updateTargetHint();
+            document.getElementById('city').addEventListener('input', updateTargetHint);
+            document.getElementById('target-count').addEventListener('input', updateTargetHint);
         });
     </script>
 </body>

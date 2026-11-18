@@ -22,10 +22,13 @@ ai_config.json
 *.xlsx
 leads_*.csv
 
-# Cache files
+# Cache & database files
 *cache*.json
 ai_daily_cache.json
 google_keywords_cache.json
+*.db
+*.db-shm
+*.db-wal
 
 # Logs & temporary files
 *.log
@@ -41,5 +44,7 @@ downloaded_files/
 Thumbs.db
 .idea/
 .vscode/
+.agents/
+.claude/
 *.swp
 *.swo
